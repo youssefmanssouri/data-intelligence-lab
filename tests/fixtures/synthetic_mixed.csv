@@ -1,0 +1,6 @@
+id,name,age,salary,is_active,signup_date,postal_code
+101,Alice Smith,28,75000.50,true,2023-01-15,01234
+102,Bob Jones,34,82100.00,false,2022-11-20,90210
+103,Charlie Brown,NA,,true,2023-03-01,00765
+104,Diana Prince,29,95400.75,true,2021-07-04,10001
+105,Evan Wright,42,61000.00,false,2020-05-12,30301
