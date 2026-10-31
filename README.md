@@ -1,3 +1,5 @@
+project not finished yet ...
+
 # Data Intelligence Lab
 
 Data Intelligence Lab is an open-source, general-purpose data intelligence platform designed to help people transform raw datasets into transparent, statistically rigorous, and actionable insights.
