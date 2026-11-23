@@ -1,0 +1,77 @@
+# Data Intelligence Lab v1.0 - Authoritative Production Dependencies (Windows x64 / CPython 3.12)
+# Fully pinned dependency closure with strict cryptographic SHA-256 hashes for reproducible vendoring.
+
+annotated-doc==0.0.5 \
+    --hash=sha256:d894b8e5c1d1a6cff4891129f12ae3081e6cb7bc4f1d43a57199c9cb5ae9116e
+
+annotated-types==0.8.0 \
+    --hash=sha256:dbe890be4ff55858cf3ea6718cb66b96b3a0e6944e54e4e9f7831d171ccfa2f7
+
+anyio==4.15.1 \
+    --hash=sha256:5b777a87169bb88d0111fbca572b1aa25a66a1d48c081829e3fc144f8842d76f
+
+certifi==2026.10.23 \
+    --hash=sha256:d021c33a923573c09f89efee74e4c3569762ab8997a48972ca8b1c43770335e4
+
+click==8.5.0 \
+    --hash=sha256:1a84f479dcc67e8c3e803db1b75df99c2d1b8c2d8c36696ddb0f19c9b5b24467
+
+colorama==0.4.6 \
+    --hash=sha256:4f1d9991f5acd0eb60b39f41f60377754e8ce57ce6b348776cb1698d3d449a9b
+
+fastapi==0.162.0 \
+    --hash=sha256:0d540e11899e1cc6e7dd714ef78c92a24bc7e4c9f139fb2193b2aa260a99dd74
+
+h11==0.16.0 \
+    --hash=sha256:01d51a7e289bf6774653a7a9ff60456107b36a7515f401f8d438fc7d92ccb403
+
+httpcore==1.0.9 \
+    --hash=sha256:f52077e6e580e66ef0e12a67303310ce124ff44ee77ae6fa13ae9be39e55716d
+
+httpx==0.28.1 \
+    --hash=sha256:550e501a304e223bfb2ff08c028ad725be8e244d0ab47c16c683b5d8487968db
+
+idna==3.20 \
+    --hash=sha256:909930fca566580f4f5a892e850b6a9c72e2764b88d8b9d79c6d482811467a1f
+
+numpy==2.5.4 \
+    --hash=sha256:f795642a420bba290453531bfa827aa51c91ae6be18a0eb1b239db172f30b91e
+
+pandas==2.3.3 \
+    --hash=sha256:7cbb37a6b412be8f45f745d4e107bb4d2b23a7bb4ffbe9d0df5c46e309cbffc8
+
+pyarrow==18.1.0 \
+    --hash=sha256:cf54be01784f1b80c35fa626ddff4745582f3ef423bc2783b27b5e43a918f60c
+
+pydantic==2.14.1 \
+    --hash=sha256:94dfb141ea87e6fa89c026ca214878a846fc47c5d9a9ba465d6a2f7c0410fffe
+
+pydantic-core==2.50.1 \
+    --hash=sha256:0d96d2e666ce00d31e9aebdaee09ca3957288f3f885f81216bc52766bf744b61
+
+python-dateutil==3.0.0 \
+    --hash=sha256:b1d560c558ec48c1a1795db2839af4efbe10926715fbc7dfb7a956102aa64f2a
+
+python-multipart==0.0.32 \
+    --hash=sha256:e0b5711663a8a30ecdfceb1c318bf9739fc03f90b411516f4eec89e9f2eeec89
+
+pytz==2026.5 \
+    --hash=sha256:9199d28e75db55b7787498c89da1f2d5ae8f6b0b2e3a1523c0b02130e5f29918
+
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddddab5acf94790d3d5278223c6d304f43167142668e8d85
+
+starlette==1.10.0 \
+    --hash=sha256:8894451c0451cfbf4be8f731c6a2e2d97ad48483f3a1fefcbe78f72c3a595cfb
+
+typing-extensions==4.16.0 \
+    --hash=sha256:7a4146a7828c4b1821b0ea17a1a2ab6286fa414a3891d4e0e56598586f7b9f31
+
+typing-inspection==0.4.4 \
+    --hash=sha256:98993883390c58a5ae01c9a8db209e5ee5071df915f799e0df36fa99e917adbc
+
+tzdata==2026.5 \
+    --hash=sha256:561c21054a3a60a71f0088001be0d5f812547b744a6ea861a8684d0b2f5664a7
+
+uvicorn==0.54.0 \
+    --hash=sha256:0d2f09ddbb50bf9a4c58f9fc29cc2c3dfb8676a03e107df61dfb6894c25605d8
