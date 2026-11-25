@@ -39,13 +39,13 @@ Captured from the current development build running locally (Next.js frontend + 
 
   | Suite | Command | Result |
   | --- | --- | --- |
-  | Backend unit, integration & worker contract | `pytest` | 1,193 passed, 0 failed, 0 warnings. Known pre-existing flake: `test_cross_process_contention_and_owner_exit` fails intermittently (multiprocessing barrier lifetime race in the test, not in production code). |
+  | Backend unit, integration & worker contract | `pytest` | 1,193 passed, 0 failed, 0 warnings. The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
   | Frontend UI (mocked API) | `npm test` | 36 passed |
   | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
   | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
   | Lint, type check, production build | `npm run lint`, `typecheck`, `build` | All pass |
 
-  The Playwright configs launch the server with `npm.cmd` (Windows). The Linux run above used a temporary, uncommitted config override for the start command and the browser path; the tests themselves were unchanged.
+  The Playwright configs are cross-platform: they start the server with `node scripts/server.mjs`, and `npm run test:real` uses the repository `.venv` Python (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` elsewhere) unless `DIL_PYTHON` is set. CI runs every suite above on Linux.
 - **Documentation:**
   - [Product Definition](docs/01-product-definition.md): Vision, user personas, 8-stage analytical pipeline, measurable acceptance criteria, and non-goals.
   - [Architecture Specification](docs/02-architecture.md): Hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline, and ADRs.

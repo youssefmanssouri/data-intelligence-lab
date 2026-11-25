@@ -15,7 +15,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm.cmd run start -- --port 3100",
+    // Same as `npm run start`, without the Windows-only npm.cmd shim.
+    command: "node scripts/server.mjs --port 3100",
     url: "http://127.0.0.1:3100",
     reuseExistingServer: false,
     timeout: 60_000,
