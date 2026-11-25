@@ -8,6 +8,27 @@ The platform is designed around a **hybrid operational model**: prioritizing a l
 
 ---
 
+## Screenshots
+
+Captured from the current development build running locally (Next.js frontend + FastAPI backend), using a synthetic sample CSV (`sales_orders_2025.csv`, 3,024 rows × 13 columns). All values shown are computed by the real backend for that sample file.
+
+**Data Health Dashboard**: dataset totals, missing values by column, the health score split by its 60/30/10 weights, quality notes and column profiles.
+
+![Data Health Dashboard](docs/screenshots/dashboard.png)
+
+**Upload**: CSV import with the scoring method explained up front.
+
+![Upload page](docs/screenshots/upload.png)
+
+<table>
+  <tr>
+    <td width="60%"><strong>Column profile</strong>: an expanded column with its type-specific statistics.<br><br><img src="docs/screenshots/column-profile.png" alt="Expanded column profile with statistics"></td>
+    <td width="40%"><strong>Mobile</strong>: the sidebar collapses into a top bar.<br><br><img src="docs/screenshots/dashboard-mobile.png" alt="Dashboard on a phone-sized screen"></td>
+  </tr>
+</table>
+
+---
+
 ## Current Project Status: Milestone 4B-1 Local API Boundary Implemented
 
 - **Overall Roadmap Progress:** ~42%
