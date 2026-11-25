@@ -39,7 +39,7 @@ Captured from the current development build running locally (Next.js frontend + 
 
   | Suite | Command | Result |
   | --- | --- | --- |
-  | Backend unit, integration & worker contract | `pytest` | 1,193 passed, 0 failed (1 warning: Starlette `TestClient` httpx deprecation) |
+  | Backend unit, integration & worker contract | `pytest` | 1,193 passed, 0 failed, 0 warnings. Known pre-existing flake: `test_cross_process_contention_and_owner_exit` fails intermittently (multiprocessing barrier lifetime race in the test, not in production code). |
   | Frontend UI (mocked API) | `npm test` | 36 passed |
   | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
   | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
