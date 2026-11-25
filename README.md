@@ -35,7 +35,17 @@ Captured from the current development build running locally (Next.js frontend + 
 - **Domain Core (Phases 1–3):** Implemented and frozen (resource safety, strict CSV parsing, explicit type inference and statistical profiling).
 - **Persistence Adapter (Milestone 4A):** Implemented and frozen (atomic Parquet + metadata persistence).
 - **Local API Boundary (Milestone 4B-1):** Implemented (FastAPI delivery layer, `IExecutionAdapter` port, `LocalExecutionAdapter`, RFC 7807 error boundary).
-- **Automated Tests:** 389 passed, 0 failed across unit and integration suites (1 warning). Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+- **Automated Tests** (verified 25 November 2026 on commit `25933dc`, Linux, Python 3.13, Node 22): all suites pass, 1,270 tests, 0 failed. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+
+  | Suite | Command | Result |
+  | --- | --- | --- |
+  | Backend unit, integration & worker contract | `pytest` | 1,193 passed, 0 failed (1 warning: Starlette `TestClient` httpx deprecation) |
+  | Frontend UI (mocked API) | `npm test` | 36 passed |
+  | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
+  | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
+  | Lint, type check, production build | `npm run lint`, `typecheck`, `build` | All pass |
+
+  The Playwright configs launch the server with `npm.cmd` (Windows). The Linux run above used a temporary, uncommitted config override for the start command and the browser path; the tests themselves were unchanged.
 - **Documentation:**
   - [Product Definition](docs/01-product-definition.md): Vision, user personas, 8-stage analytical pipeline, measurable acceptance criteria, and non-goals.
   - [Architecture Specification](docs/02-architecture.md): Hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline, and ADRs.
