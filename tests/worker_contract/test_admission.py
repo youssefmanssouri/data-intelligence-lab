@@ -1,5 +1,6 @@
 """Temporary SQLite gate tests; child processes only contend for admission."""
 
+from contextlib import closing
 from dataclasses import replace
 import multiprocessing
 import queue
@@ -26,7 +27,7 @@ def test_acquire_commit_release(ledger):
     assert len(lease.owner_token) == 32
     assert ledger.inspect().state == "HELD"
     # Separate connection can obtain a writer transaction: none remains open.
-    with ledger._connect() as db:
+    with closing(ledger._connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         assert db.execute("SELECT job_id FROM admission").fetchone()[0] == JOB
         db.rollback()
@@ -102,7 +103,7 @@ def test_unusable_database_is_not_repaired(tmp_path, case):
         path.touch()
     else:
         gate.initialize()
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("DELETE FROM admission")
     before = path.read_bytes()
     with pytest.raises(ControllerError) as caught:
