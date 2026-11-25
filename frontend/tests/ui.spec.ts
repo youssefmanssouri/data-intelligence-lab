@@ -477,6 +477,22 @@ test("keyboard flow, focus and mobile layout", async ({ page }, testInfo) => {
     page.getByRole("link", { name: "Data Intelligence Lab home" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("navigation", { name: "Workspace" }).getByRole("link", {
+      name: "Upload CSV",
+    }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("input[type=file]")).toBeFocused();
+  // The skip link bypasses the sidebar and lands keyboard users on the form.
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    page.getByRole("link", { name: "Skip to content" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
   await expect(page.locator("input[type=file]")).toBeFocused();
   await mockMetadata(page);
   await page.goto(path);
