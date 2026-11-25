@@ -241,3 +241,52 @@ def test_cross_process_contention_and_owner_exit(tmp_path):
                 child.join(timeout=5)
         results.close()
         results.join_thread()
+
+
+def test_forced_both_busy_then_uncontended_owner_exit(tmp_path):
+    """Deterministically cover the rare both-BUSY branch of the test above.
+
+    The parent holds the writer lock while both children contend, so both must
+    observe BUSY and leave the slot IDLE; an uncontended owner then acquires,
+    exits, and the slot stays HELD with no recovery.
+    """
+    path = tmp_path / "shared.sqlite"
+    gate = AdmissionLedger(path)
+    gate.initialize()
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(2)
+    owner_barrier = context.Barrier(1)  # Parent reference outlives the child.
+    results = context.Queue()
+    children = [context.Process(target=contend, args=(path, bytes([i])*16, barrier, results))
+                for i in (1, 2)]
+    try:
+        lock = gate._connect()
+        try:
+            lock.execute("BEGIN IMMEDIATE")
+            for child in children:
+                child.start()
+            outcomes = [_next_result(results, children) for _ in children]
+            for child in children:
+                _join_ok(child)
+        finally:
+            lock.rollback()
+            lock.close()
+        assert sorted(outcomes) == [("BUSY", bytes([1])*16), ("BUSY", bytes([2])*16)]
+        assert gate.inspect().state == "IDLE"
+        owner = context.Process(target=contend, args=(path, b"c"*16, owner_barrier, results))
+        children.append(owner)
+        owner.start()
+        assert _next_result(results, [owner]) == ("HELD", b"c"*16)
+        _join_ok(owner)
+        record = gate.inspect()
+        assert (record.state, record.job_id) == ("HELD", b"c"*16)  # Owner exited, no recovery.
+        with pytest.raises(ControllerError) as caught:
+            gate.acquire(JOB)
+        assert caught.value.code == ErrorCode.BUSY
+    finally:
+        for child in children:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=5)
+        results.close()
+        results.join_thread()
