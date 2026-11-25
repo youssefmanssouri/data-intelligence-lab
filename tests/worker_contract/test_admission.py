@@ -2,7 +2,9 @@
 
 from dataclasses import replace
 import multiprocessing
+import queue
 import sqlite3
+import time
 
 import pytest
 
@@ -164,6 +166,36 @@ def test_singleton_constraint_and_stale_release(ledger):
     assert ledger.inspect().owner_token == new.owner_token
 
 
+# Hang guard for spawned children; success never waits on it. Must exceed the
+# 15 s barrier timeout in fakes.contend so a missing sibling surfaces as a
+# child failure rather than a parent timeout.
+CHILD_HANG_GUARD_S = 20
+
+
+def _next_result(results, children):
+    """Return the next child result, failing fast and descriptively.
+
+    A child that exits non-zero before reporting fails immediately with its
+    exit code instead of an opaque queue.Empty after the full guard period.
+    """
+    deadline = time.monotonic() + CHILD_HANG_GUARD_S
+    while True:
+        try:
+            return results.get(timeout=0.1)
+        except queue.Empty:
+            pass
+        crashed = [(c.name, c.exitcode) for c in children if c.exitcode not in (None, 0)]
+        assert not crashed, f"child exited before reporting a result: {crashed}"
+        assert time.monotonic() < deadline, (
+            f"no child result within {CHILD_HANG_GUARD_S}s; "
+            f"alive={[(c.name, c.is_alive()) for c in children]}")
+
+
+def _join_ok(child):
+    child.join(timeout=CHILD_HANG_GUARD_S)
+    assert child.exitcode == 0, f"{child.name} exitcode={child.exitcode}"
+
+
 def test_cross_process_contention_and_owner_exit(tmp_path):
     path = tmp_path / "shared.sqlite"
     gate = AdmissionLedger(path)
@@ -176,10 +208,9 @@ def test_cross_process_contention_and_owner_exit(tmp_path):
     try:
         for child in children:
             child.start()
-        outcomes = [results.get(timeout=20) for _ in children]
+        outcomes = [_next_result(results, children) for _ in children]
         for child in children:
-            child.join(timeout=20)
-            assert child.exitcode == 0
+            _join_ok(child)
         states = [x[0] for x in outcomes]
         assert set(states) <= {"BUSY", "HELD"}
         assert states.count("HELD") <= 1
@@ -189,13 +220,16 @@ def test_cross_process_contention_and_owner_exit(tmp_path):
         # policy in the ledger or controller.
         if "HELD" not in states:
             assert gate.inspect().state == "IDLE"
+            # Keep a parent-side reference: Process.start() drops its args, and
+            # with "spawn" a SemLock is unlinked when the parent object is freed,
+            # so an inline Barrier makes the child fail to reopen it (ENOENT).
+            owner_barrier = context.Barrier(1)
             owner = context.Process(target=contend,
-                args=(path, b"c"*16, context.Barrier(1), results))
+                args=(path, b"c"*16, owner_barrier, results))
             children.append(owner)
             owner.start()
-            assert results.get(timeout=20)[0] == "HELD"
-            owner.join(timeout=20)
-            assert owner.exitcode == 0
+            assert _next_result(results, [owner])[0] == "HELD"
+            _join_ok(owner)
         assert gate.inspect().state == "HELD"  # Owner has exited, no recovery.
         with pytest.raises(ControllerError) as caught:
             gate.acquire(JOB)
