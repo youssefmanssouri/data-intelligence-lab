@@ -109,16 +109,10 @@ main {
   letter-spacing: 0.03em;
 }
 .mark {
-  display: flex;
-  align-items: baseline;
-  font-family: var(--serif);
-  font-size: 38px;
-  letter-spacing: -6px;
-  color: var(--accent);
-  padding-right: 6px;
-}
-.mark span {
-  font-style: italic;
+  display: block;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
 }
 .local {
   font-size: 12px;

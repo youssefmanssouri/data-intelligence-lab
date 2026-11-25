@@ -21,9 +21,22 @@ export default function RootLayout({
             className="brand"
             aria-label="Data Intelligence Lab home"
           >
-            <span className="mark" aria-hidden="true">
-              di<span>l</span>
-            </span>
+            {/* "Rising i" logo mark, drawn in the app palette (see assets/brand/). */}
+            <svg
+              className="mark"
+              viewBox="0 0 48 48"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="8.5" cy="38" r="5" fill="var(--accent)" />
+              <path
+                d="M19.5 38 24 25M33 38 41.5 11"
+                fill="none"
+                stroke="var(--ink)"
+                strokeWidth="10"
+                strokeLinecap="round"
+              />
+            </svg>
             <span>
               Data Intelligence Lab
               <span className="brandSub">Clarity starts with your data.</span>
