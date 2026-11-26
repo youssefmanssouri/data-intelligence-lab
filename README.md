@@ -35,11 +35,11 @@ Captured from the current development build running locally (Next.js frontend + 
 - **Domain Core (Phases 1–3):** Implemented and frozen (resource safety, strict CSV parsing, explicit type inference and statistical profiling).
 - **Persistence Adapter (Milestone 4A):** Implemented and frozen (atomic Parquet + metadata persistence).
 - **Local API Boundary (Milestone 4B-1):** Implemented (FastAPI delivery layer, `IExecutionAdapter` port, `LocalExecutionAdapter`, RFC 7807 error boundary).
-- **Automated Tests** (verified 25 November 2026 on commit `25933dc`, Linux, Python 3.13, Node 22): all suites pass, 1,270 tests, 0 failed. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+- **Automated Tests** (verified 26 November 2026 on commit `e0156c6`, Linux, Python 3.13, Node 22): all suites pass, 1,271 tests, 0 failed. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
 
   | Suite | Command | Result |
   | --- | --- | --- |
-  | Backend unit, integration & worker contract | `pytest` | 1,193 passed, 0 failed, 0 warnings. The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
+  | Backend unit, integration & worker contract | `pytest` | 1,194 passed, 0 failed, 0 warnings (any warning fails the run: `filterwarnings = error` in `pytest.ini`). The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
   | Frontend UI (mocked API) | `npm test` | 36 passed |
   | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
   | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
