@@ -1392,12 +1392,15 @@ class UnifiedLauncher:
                         f"Unexpected HTTP status {resp.status} from {url} (expected {expected_status})."
                     )
             except urllib.error.HTTPError as exc:
-                if exc.code == expected_status:
-                    return
-                if exc.code == 503:
-                    raise ServiceReadinessError(
-                        f"Service at {url} reported storage not ready (HTTP 503)."
-                    ) from exc
+                # An HTTPError is also the response: close it on every path, or its connection
+                # (or, on CPython 3.14, a temporary file) stays open until garbage collection.
+                with exc:
+                    if exc.code == expected_status:
+                        return
+                    if exc.code == 503:
+                        raise ServiceReadinessError(
+                            f"Service at {url} reported storage not ready (HTTP 503)."
+                        ) from exc
             except (urllib.error.URLError, OSError):
                 pass  # Connection refused or server still initializing; retry
 
