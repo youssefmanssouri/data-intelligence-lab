@@ -21,6 +21,7 @@ from backend.errors import (
     register_error_handlers,
 )
 from backend.ports import IExecutionAdapter
+from backend.request_guard import LocalRequestGuard
 from backend.routes.datasets import router as datasets_router
 from backend.routes.health import router as health_router
 from core.types import IngestionLimits
@@ -175,6 +176,10 @@ def create_app(
 
     # Register bounded upload intake middleware
     app.add_middleware(BoundedUploadMiddleware)
+
+    # Outermost: refuse non-loopback Host, cross-site and foreign-origin requests
+    # before routing or body intake (see backend/request_guard.py).
+    app.add_middleware(LocalRequestGuard)
 
     # Register API route handlers
     app.include_router(health_router)
