@@ -440,10 +440,15 @@ jobs:
             "- **Note:** Functional tests ran against the GitHub runner's preinstalled VC++ runtime; this does not open the CRT release gate or verify clean end-user machines."
           ) | Out-File -FilePath $reportPath -Encoding utf8
 
-          Get-ChildItem $artDir -File | Sort-Object Name | ForEach-Object {
+          # Hash every other file first, then write. Piping straight into Out-File opened (and
+          # locked) SHA256SUMS.txt before Get-ChildItem listed the folder, so Get-FileHash then
+          # failed on it (run 45746532824). The manifest does not list itself.
+          $sums = Get-ChildItem $artDir -File | Where-Object { $_.Name -ne "SHA256SUMS.txt" } | Sort-Object Name | ForEach-Object {
             $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$h  $($_.Name)"
-          } | Out-File -FilePath (Join-Path $artDir "SHA256SUMS.txt") -Encoding utf8
+          }
+          $sums | Out-File -FilePath (Join-Path $artDir "SHA256SUMS.txt") -Encoding utf8
+          Get-Content (Join-Path $artDir "SHA256SUMS.txt")
 
       - name: Verify required evidence is complete before upload
         shell: pwsh
