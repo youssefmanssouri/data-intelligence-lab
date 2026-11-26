@@ -49,11 +49,26 @@ Set-Content -Path '$exitFile' -Value `$LASTEXITCODE
 # and Start-Process -Credential would pass this admin session's environment.)
 $python = Join-Path $env:pythonLocation "python.exe"
 $helper = Join-Path $PSScriptRoot "create_process_with_logon.py"
-& $python $helper --user $User --password-file $PwFile --cwd $Shared --timeout-minutes $TimeoutMinutes `
-    --command "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$wrapper`""
-$launchCode = $LASTEXITCODE
-
-if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host $_ } }
+$launcher = Start-Process -FilePath $python -PassThru -NoNewWindow -ArgumentList @(
+    "`"$helper`"", "--user", $User, "--password-file", "`"$PwFile`"", "--cwd", "`"$Shared`"",
+    "--timeout-minutes", $TimeoutMinutes,
+    "--command", "`"powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wrapper`"")  # $Shared has no spaces
+# Stream the step's log while it runs, so a hang shows where it stopped.
+$shown = 0
+while (-not $launcher.HasExited) {
+    Start-Sleep -Seconds 10
+    if (Test-Path $log) {
+        $lines = @(Get-Content $log -ErrorAction SilentlyContinue)
+        for ($i = $shown; $i -lt $lines.Count; $i++) { Write-Host $lines[$i] }
+        $shown = $lines.Count
+    }
+}
+$launcher.WaitForExit()
+$launchCode = $launcher.ExitCode
+if (Test-Path $log) {
+    $lines = @(Get-Content $log -ErrorAction SilentlyContinue)
+    for ($i = $shown; $i -lt $lines.Count; $i++) { Write-Host $lines[$i] }
+}
 if (-not (Test-Path $exitFile)) { throw "Step '$Name' produced no exit code (launcher exit $launchCode)" }
 $code = [int](Get-Content $exitFile -Raw).Trim()
 Write-Host "Step '$Name' ran as $User and exited $code"
