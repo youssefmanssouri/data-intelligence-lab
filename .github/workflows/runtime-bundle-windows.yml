@@ -1,0 +1,136 @@
+name: Runtime bundle build and smoke test on Windows (Milestone B)
+
+# Builds the standalone runtime bundle exactly as a release would, then tests the
+# bundle independently of the build tools:
+#   1. verified wheelhouse (PyArrow only from the CRT-free build-input pre-release);
+#   2. production frontend build with Node.js 22.23.5 (official zip, SHA-256 pinned);
+#   3. build_runtime_bundle.py --mode release (fail-closed CRT gate, manifest);
+#   4. build_runtime_bundle.py --verify (every file against manifest.json);
+#   5. smoke_test_bundle.py: copies the bundle to a path with spaces and runs only
+#      its own python.exe / node.exe / launcher.py with PATH reduced to System32;
+#   6. the frontend port-file / proxy tests on Windows (stdin-EOF shutdown path).
+
+on:
+  push:
+    branches:
+      - phase/1f3-10-runtime-bundle
+
+permissions:
+  contents: read # checkout and download the build-input pre-release
+
+env:
+  PYARROW_RELEASE_TAG: build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782
+  PYARROW_WHEEL: pyarrow-18.1.0-cp312-cp312-win_amd64.whl
+  NODE_ZIP: node-v22.23.5-win-x64.zip
+  # From https://nodejs.org/dist/v22.23.5/SHASUMS256.txt
+  NODE_ZIP_SHA256: 4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  bundle:
+    name: Build, verify and smoke-test the bundle (win-x64)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12.10 x64 (build tool only)
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12.10"
+          architecture: "x64"
+
+      - name: Set up Node.js 22.23.5 (build tool only, hash-pinned)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Join-Path $env:RUNNER_TEMP $env:NODE_ZIP
+          Invoke-WebRequest "https://nodejs.org/dist/v22.23.5/$env:NODE_ZIP" -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:NODE_ZIP_SHA256) { throw "Node.js zip SHA-256 mismatch: $actual" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\nodejs"
+          $dir = "$env:RUNNER_TEMP\nodejs\node-v22.23.5-win-x64"
+          $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$dir\node.exe" --version
+          & "$dir\npm.cmd" --version
+
+      - name: Record the VC++ Redistributable on the runner (documented prerequisite >= 14.44)
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+          if (Test-Path $key) { Get-ItemProperty $key | Select-Object Version, Installed, Major, Minor, Bld | Format-List }
+          else { Write-Warning "VC++ 2015-2022 x64 runtime registry key not found" }
+
+      - name: Download the CRT-free PyArrow wheel from the build-input pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh release download $env:PYARROW_RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:PYARROW_WHEEL --dir "$env:RUNNER_TEMP\pyarrow"
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)" }
+
+      - name: Build the verified wheelhouse
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/prepare_wheelhouse.py --pyarrow-wheel "$env:RUNNER_TEMP\pyarrow\$env:PYARROW_WHEEL" --output-dir "$env:RUNNER_TEMP\wheelhouse"
+          if ($LASTEXITCODE -ne 0) { throw "prepare_wheelhouse.py failed ($LASTEXITCODE)" }
+
+      - name: Build the production frontend
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed ($LASTEXITCODE)" }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed ($LASTEXITCODE)" }
+          Get-Content .next\BUILD_ID
+
+      - name: Build the release bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/build_runtime_bundle.py --mode release --wheelhouse "$env:RUNNER_TEMP\wheelhouse" --output-dir "$env:RUNNER_TEMP\bundle" --cache-dir "$env:RUNNER_TEMP\runtime-cache"
+          if ($LASTEXITCODE -ne 0) { throw "build_runtime_bundle.py failed ($LASTEXITCODE)" }
+
+      - name: Re-verify the bundle against its manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/build_runtime_bundle.py --verify "$env:RUNNER_TEMP\bundle"
+          if ($LASTEXITCODE -ne 0) { throw "bundle verification failed ($LASTEXITCODE)" }
+          $m = Get-Content "$env:RUNNER_TEMP\bundle\manifest.json" -Raw | ConvertFrom-Json
+          "files: $($m.file_count)  bytes: $($m.total_bytes)"
+          $m.runtime | Select-Object mode, frontend_build_id, python_excluded_files | Format-List
+          $m.runtime.crt_gate | Format-List
+          $m.runtime.node | Format-List
+
+      - name: Smoke-test the bundle independently
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/smoke_test_bundle.py --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\smoke" --evidence "$env:RUNNER_TEMP\smoke-evidence.json"
+          if ($LASTEXITCODE -ne 0) { throw "bundle smoke test failed ($LASTEXITCODE)" }
+
+      - name: Frontend port-file and proxy tests on Windows
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm run test:proxy
+          if ($LASTEXITCODE -ne 0) { throw "test:proxy failed ($LASTEXITCODE)" }
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: runtime-bundle-windows-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}\bundle\manifest.json
+            ${{ runner.temp }}\smoke-evidence.json
+            ${{ runner.temp }}\wheelhouse\wheelhouse-manifest.json
+          retention-days: 7
+          if-no-files-found: warn
