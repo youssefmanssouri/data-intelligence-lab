@@ -52,7 +52,8 @@ jobs:
           $cmdOut = cmd /c "`"$vcvars`" >nul 2>&1 && cl 2>&1 && link /? 2>&1 | findstr /B /C:`"Microsoft (R) Incremental Linker`""
           # The SDK the compiler actually uses is the one vcvars64 selects (%WindowsSDKVersion%).
           # Only version-shaped Include folders are SDKs (others, such as "wdf", are not).
-          $sdkUsed = (cmd /c "`"$vcvars`" >nul 2>&1 && echo %WindowsSDKVersion%").Trim().TrimEnd('\')
+          $sdkLine = cmd /c "`"$vcvars`" >nul 2>&1 && set WindowsSDKVersion" | Where-Object { $_ -match '^WindowsSDKVersion=' } | Select-Object -First 1
+          $sdkUsed = ([string]$sdkLine -replace '^WindowsSDKVersion=', '').Trim().TrimEnd('\')
           if ($sdkUsed -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Could not determine the Windows SDK selected by vcvars64 (got '$sdkUsed')" }
           $sdkInstalled = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
             Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
