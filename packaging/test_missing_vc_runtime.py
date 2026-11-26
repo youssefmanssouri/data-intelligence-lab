@@ -41,6 +41,7 @@ from test_installer import APP_NAME, run_setup, uninstall_entry  # noqa: E402
 VC_KEY = r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 VC_DISPLAY_NAME = re.compile(r"^Microsoft Visual C\+\+ (2015-20\d\d|v14) Redistributable \(x64\)", re.I)
 STATUS_DLL_NOT_FOUND = 0xC0000135
+VC_RUNTIME_MSI = re.compile(r"^Microsoft Visual C\+\+ 20\d\d X64 (Minimum|Additional) Runtime", re.I)
 
 
 def vc_registration() -> Optional[Dict[str, int]]:
@@ -86,6 +87,30 @@ def vc_bundles() -> List[Dict[str, str]]:
     return found
 
 
+def vc_runtime_msis() -> List[Dict[str, str]]:
+    """The x64 runtime's Windows Installer packages (product code = Uninstall subkey name)."""
+    import winreg
+
+    found = []
+    base = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base, 0, winreg.KEY_READ | view)
+        except OSError:
+            continue
+        with root:
+            for i in range(winreg.QueryInfoKey(root)[0]):
+                name = winreg.EnumKey(root, i)
+                try:
+                    with winreg.OpenKey(root, name) as key:
+                        display = winreg.QueryValueEx(key, "DisplayName")[0]
+                except OSError:
+                    continue
+                if VC_RUNTIME_MSI.match(display) and re.fullmatch(r"\{[0-9A-Fa-f-]{36}\}", name):
+                    found.append({"product_code": name, "display_name": display})
+    return list({m["product_code"]: m for m in found}.values())
+
+
 def uninstall_vc_runtime(evidence: Dict[str, object]) -> None:
     bundles = [b for b in vc_bundles() if b.get("BundleCachePath")]
     evidence["vc_bundles"] = bundles
@@ -96,6 +121,16 @@ def uninstall_vc_runtime(evidence: Dict[str, object]) -> None:
         result = subprocess.run([bundle["BundleCachePath"], "/uninstall", "/quiet", "/norestart"], timeout=600)
         codes.append(result.returncode)
     evidence["vc_uninstall_exit_codes"] = codes
+    if vc_registration() is not None:
+        # Other installed products (e.g. Visual Studio on CI images) register as dependents of the
+        # runtime packages, so the bundle keeps them. On this disposable machine, remove them directly.
+        msis = vc_runtime_msis()
+        evidence["vc_runtime_msis"] = msis
+        for msi in msis:
+            result = subprocess.run(["msiexec.exe", "/x", msi["product_code"], "/qn", "/norestart",
+                                     "IGNOREDEPENDENCIES=ALL"], timeout=600)
+            codes.append(result.returncode)
+        evidence["vc_uninstall_exit_codes"] = codes
     # 0 = done, 3010 = done, reboot required to replace files in use.
     check("vc-runtime-uninstalled", all(c in (0, 3010) for c in codes) and vc_registration() is None,
           {"exit_codes": codes, "registration": vc_registration()})

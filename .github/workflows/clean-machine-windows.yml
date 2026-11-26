@@ -221,7 +221,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python packaging/test_installer.py --setup "C:\dil-shared\kit\$env:SETUP_NAME" --bundle C:\dil-shared\bundle --work-dir "$env:RUNNER_TEMP\admin-lifecycle" --evidence "$env:RUNNER_TEMP\admin-lifecycle.json"
+          python packaging/test_installer.py --setup "C:\dil-shared\kit\$env:SETUP_NAME" --bundle C:\dil-shared\bundle --work-dir "$env:RUNNER_TEMP\admin-lifecycle" --evidence C:\dil-shared\admin-lifecycle.json
           if ($LASTEXITCODE -ne 0) { throw "admin lifecycle failed ($LASTEXITCODE)" }
 
       - name: Verification kit as a standard user (non-interactive)
@@ -267,7 +267,6 @@ jobs:
         with:
           name: clean-machine-evidence-${{ matrix.os }}
           path: |
-            ${{ runner.temp }}\admin-lifecycle.json
             C:\dil-shared\*.json
             C:\dil-shared\*.log
           retention-days: 14
@@ -298,7 +297,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python packaging/test_missing_vc_runtime.py --setup "C:\dil-shared\kit\$env:SETUP_NAME" --work-dir "$env:RUNNER_TEMP\missing-vc" --evidence "$env:RUNNER_TEMP\missing-vc.json" --i-understand-this-uninstalls-vc-runtime
+          python packaging/test_missing_vc_runtime.py --setup "C:\dil-shared\kit\$env:SETUP_NAME" --work-dir "$env:RUNNER_TEMP\missing-vc" --evidence C:\dil-shared\missing-vc.json --i-understand-this-uninstalls-vc-runtime
           if ($LASTEXITCODE -ne 0) { throw "missing VC++ runtime test failed ($LASTEXITCODE)" }
 
       - name: Verification kit phase 1 as a standard user (no VC++ runtime)
@@ -323,7 +322,6 @@ jobs:
         with:
           name: missing-vc-runtime-evidence
           path: |
-            ${{ runner.temp }}\missing-vc.json
             C:\dil-shared\*.json
             C:\dil-shared\*.log
           retention-days: 14
