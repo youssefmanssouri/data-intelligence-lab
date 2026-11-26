@@ -166,9 +166,10 @@ jobs:
           # serves that release (HTTP 404). The archive.apache.org copy is the same file:
           # Arrow still enforces its pinned URL_HASH SHA256=b5d8311a779470e1502c027f428a1db542f5c051c8e1280ccd2163fa935ff2d6.
           ARROW_THRIFT_URL: https://archive.apache.org/dist/thrift/0.20.0/thrift-0.20.0.tar.gz
-          # The runner image has MinGW (C:\mingw64\bin) on PATH, and CMake's Ninja generator
-          # picks its c++ over MSVC unless told otherwise (run 45733664166 built with MinGW GCC).
-          # /MD and the CRT-free goal require MSVC, so name it explicitly and verify it below.
+          # /MD and the CRT-free goal require MSVC. The cmd lines below use delayed expansion
+          # (cmd /v:on, !PATH!): with %PATH% the value was read before vcvars64 ran, which
+          # dropped the MSVC directories and let CMake pick MinGW's c++ (runs 45733664166,
+          # 45734362986). MSVC is also named explicitly here and verified after configure.
           CC: cl
           CXX: cl
         run: |
@@ -181,7 +182,7 @@ jobs:
           $bldLog = Join-Path $env:R8R5_WS "artifact\cmake-build.log"
 
           $cmakeExe = Join-Path $buildScripts "cmake.exe"
-          $cfgCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;%PATH%`" && `"$cmakeExe`" -S `"$srcCpp`" -B `"$buildCpp`" -G Ninja " +
+          $cfgCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;!PATH!`" && `"$cmakeExe`" -S `"$srcCpp`" -B `"$buildCpp`" -G Ninja " +
             "-DCMAKE_BUILD_TYPE=Release " +
             "-DCMAKE_INSTALL_PREFIX=`"$distDir`" " +
             "-DARROW_USE_STATIC_CRT=OFF " +
@@ -203,7 +204,7 @@ jobs:
             "-DARROW_WITH_BZ2=OFF " +
             "-DARROW_DEPENDENCY_SOURCE=BUNDLED"
 
-          cmd /c "$cfgCmd > `"$cfgLog`" 2>&1"
+          cmd /v:on /c "$cfgCmd > `"$cfgLog`" 2>&1"
           if ($LASTEXITCODE -ne 0) { Get-Content $cfgLog -Tail 80; throw "CMake configure failed ($LASTEXITCODE)" }
           foreach ($lang in @("C", "CXX")) {
             if (-not (Select-String -Path $cfgLog -SimpleMatch "The $lang compiler identification is MSVC" -Quiet)) {
@@ -211,8 +212,8 @@ jobs:
             }
           }
 
-          $bldCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;%PATH%`" && `"$cmakeExe`" --build `"$buildCpp`" --target install --config Release"
-          cmd /c "$bldCmd > `"$bldLog`" 2>&1"
+          $bldCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;!PATH!`" && `"$cmakeExe`" --build `"$buildCpp`" --target install --config Release"
+          cmd /v:on /c "$bldCmd > `"$bldLog`" 2>&1"
           if ($LASTEXITCODE -ne 0) { Get-Content $bldLog -Tail 80; throw "CMake build/install failed ($LASTEXITCODE)" }
 
       - name: Build PyArrow 18.1.0 wheel (cp312-win_amd64, /MD, no CRT bundling)
@@ -228,7 +229,7 @@ jobs:
           $buildScripts = Join-Path $env:R8R5_WS "build-venv\Scripts"
           $pyLog = Join-Path $env:R8R5_WS "artifact\pyarrow-build.log"
 
-          $envCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;%PATH%`" && " +
+          $envCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;!PATH!`" && " +
             "set `"CMAKE_PREFIX_PATH=$distDir`" && " +
             "set `"PYARROW_BUILD_TYPE=Release`" && " +
             "set `"PYARROW_CMAKE_GENERATOR=Ninja`" && " +
@@ -247,7 +248,7 @@ jobs:
             "set `"SETUPTOOLS_SCM_PRETEND_VERSION=18.1.0`" && " +
             "cd /d `"$srcPy`" && `"$env:R8R5_BUILD_PY`" setup.py bdist_wheel"
 
-          cmd /c "$envCmd > `"$pyLog`" 2>&1"
+          cmd /v:on /c "$envCmd > `"$pyLog`" 2>&1"
           if ($LASTEXITCODE -ne 0) { Get-Content $pyLog -Tail 100; throw "PyArrow bdist_wheel failed ($LASTEXITCODE)" }
           if (-not (Select-String -Path $pyLog -SimpleMatch "The CXX compiler identification is MSVC" -Quiet)) {
             throw "PyArrow extensions were not configured with MSVC; refusing to package the wheel"
