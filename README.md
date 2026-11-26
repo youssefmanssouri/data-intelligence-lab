@@ -45,7 +45,7 @@ Captured from the current development build running locally (Next.js frontend + 
   | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
   | Lint, type check, production build | `npm run lint`, `typecheck`, `build` | All pass |
 
-  The Playwright configs are cross-platform: they start the server with `node scripts/server.mjs`, and `npm run test:real` uses the repository `.venv` Python (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` elsewhere) unless `DIL_PYTHON` is set. CI runs every suite above on Linux.
+  The Playwright configs are cross-platform: they start the server with `node scripts/server.mjs`, and `npm run test:real` uses `DIL_PYTHON` when set, otherwise the repository `.venv` Python if it exists (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` elsewhere), otherwise the system Python on `PATH` (`python` on Windows, `python3` elsewhere). CI runs every suite above on Linux.
 - **Documentation:**
   - [Product Definition](docs/01-product-definition.md): Vision, user personas, 8-stage analytical pipeline, measurable acceptance criteria, and non-goals.
   - [Architecture Specification](docs/02-architecture.md): Hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline, and ADRs.
