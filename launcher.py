@@ -75,6 +75,13 @@ VALID_PRODUCT_TYPES = {VER_NT_WORKSTATION, VER_NT_DOMAIN_CONTROLLER, VER_NT_SERV
 # and on Windows Server 2016 (Build 14393) for Server.
 MINIMUM_WINDOWS_MAJOR = 10
 MINIMUM_CLIENT_BUILD = 15063  # Windows 10 Version 1703 (Creators Update)
+
+# Microsoft Visual C++ 2015-2022 Redistributable (x64). The bundle ships no Microsoft CRT;
+# the bundled PyArrow and CPython load it from the system, and PyArrow's MSVC build needs
+# msvcp140.dll from 14.44 or later. Never downloaded or installed by the application.
+MINIMUM_VC_RUNTIME = (14, 44)
+VC_RUNTIME_REG_KEY = r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+VC_RUNTIME_DOWNLOAD_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 MINIMUM_SERVER_BUILD = 14393  # Windows Server 2016 RTM
 # Backward-compatibility alias
 MINIMUM_WINDOWS_BUILD = MINIMUM_CLIENT_BUILD
@@ -448,6 +455,10 @@ class IWin32Adapter:
         raise NotImplementedError
 
     def close_handle(self, handle: int) -> None:
+        raise NotImplementedError
+
+    def query_vc_runtime_version(self) -> Optional[Tuple[int, int, int]]:
+        """Returns the installed VC++ 2015-2022 x64 runtime (major, minor, build), or None."""
         raise NotImplementedError
 
 
@@ -1030,6 +1041,29 @@ class Win32Adapter(IWin32Adapter):
                 err = ctypes.get_last_error()
                 raise Win32APIError(f"CloseHandle failed for handle {handle} with error code {err}")
 
+    def query_vc_runtime_version(self) -> Optional[Tuple[int, int, int]]:
+        """
+        Reads the registration Microsoft documents for the VC++ 2015-2022 x64 runtime
+        (HKLM\\SOFTWARE[\\WOW6432Node]\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64).
+        Returns the highest registered (major, minor, build) with Installed=1, or None.
+        """
+        import winreg
+
+        found: List[Tuple[int, int, int]] = []
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, VC_RUNTIME_REG_KEY, 0,
+                                    winreg.KEY_READ | view) as key:
+                    installed = winreg.QueryValueEx(key, "Installed")[0]
+                    major = winreg.QueryValueEx(key, "Major")[0]
+                    minor = winreg.QueryValueEx(key, "Minor")[0]
+                    build = winreg.QueryValueEx(key, "Bld")[0]
+            except OSError:
+                continue
+            if installed == 1 and all(type(v) is int for v in (major, minor, build)):
+                found.append((major, minor, build))
+        return max(found) if found else None
+
 
 # ---------------------------------------------------------------------------
 # Process Handle Wrapper
@@ -1203,6 +1237,33 @@ class UnifiedLauncher:
             raise PlatformCompatibilityError(
                 "Data Intelligence Lab launcher requires a 64-bit Python runtime."
             )
+
+    def validate_vc_runtime(self) -> Tuple[int, int, int]:
+        """
+        Requires the Microsoft Visual C++ 2015-2022 Redistributable (x64) 14.44 or later.
+        Fails closed with an actionable message; never downloads or installs it.
+        """
+        try:
+            version = self.adapter.query_vc_runtime_version()
+        except Exception as exc:
+            raise PlatformCompatibilityError(
+                f"Could not determine the installed Microsoft Visual C++ Redistributable (x64): {exc}"
+            ) from exc
+        required = ".".join(str(v) for v in MINIMUM_VC_RUNTIME)
+        if version is None:
+            raise PlatformCompatibilityError(
+                f"Data Intelligence Lab requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), "
+                f"version {required} or later, which is not installed. "
+                f"Install it from Microsoft ({VC_RUNTIME_DOWNLOAD_URL}) and start Data Intelligence Lab again."
+            )
+        if tuple(version[:2]) < MINIMUM_VC_RUNTIME:
+            found = ".".join(str(v) for v in version)
+            raise PlatformCompatibilityError(
+                f"Data Intelligence Lab requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), "
+                f"version {required} or later (installed: {found}). "
+                f"Update it from Microsoft ({VC_RUNTIME_DOWNLOAD_URL}) and start Data Intelligence Lab again."
+            )
+        return version
 
     def validate_paths(self) -> Tuple[Path, Path]:
         """Validates application paths and runtime entry points."""
@@ -1454,6 +1515,7 @@ class UnifiedLauncher:
         """
         try:
             self.validate_platform()
+            self.validate_vc_runtime()
             self.validate_paths()
             self.init_job_object()
             b_port = self.start_backend()
