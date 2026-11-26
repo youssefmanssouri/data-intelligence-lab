@@ -95,6 +95,7 @@ def test_build_manifest_deterministic_and_sorted(tmp_path: Path) -> None:
     assert files[0]["sha256"] == hashlib.sha256(b"content A").hexdigest()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Case-folding collisions require a case-insensitive filesystem (Windows)")
 def test_build_manifest_rejects_case_folding_collisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifies that build_manifest rejects case-folding collisions fail-closed."""
     bundle = tmp_path / "bundle"
