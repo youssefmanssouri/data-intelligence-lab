@@ -53,10 +53,14 @@ def test_requirements_vendor_lock_integrity() -> None:
             unified_entries.append(current_entry.strip())
             current_entry = ""
 
-    # 26 = the full cp312-win_amd64 closure resolved by pip, including opentelemetry-api
-    # (required by fastapi==0.162.0). The vendoring command uses --require-hashes, so a missing
-    # dependency fails it; this count keeps the lock and that closure in step.
-    assert len(unified_entries) == 26, f"Expected 26 production packages, found {len(unified_entries)}"
+    # 17 = the cp312-win_amd64 closure of what production code imports (fastapi, starlette, uvicorn,
+    # python-multipart, pyarrow), including opentelemetry-api (required by fastapi==0.162.0) and
+    # colorama (used by click on Windows). The vendoring command uses --require-hashes, so a
+    # missing dependency fails it; this count keeps the lock and that closure in step.
+    assert len(unified_entries) == 17, f"Expected 17 production packages, found {len(unified_entries)}"
+    names = {e.split('==', 1)[0].lower() for e in unified_entries}
+    # Not used by production code; numpy and pandas also bundle Microsoft CRT DLLs.
+    assert not names & {'numpy', 'pandas', 'httpx'}, names & {'numpy', 'pandas', 'httpx'}
 
     for entry in unified_entries:
         match = re.match(r"^([a-zA-Z0-9_\-]+)==([^\s]+)\s+--hash=sha256:([a-fA-F0-9]{64})$", entry)
