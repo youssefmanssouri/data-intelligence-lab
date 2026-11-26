@@ -281,7 +281,9 @@ jobs:
               re.compile(r"^(?:vcruntime|msvcp|msvcr|concrt|vccorlib|ucrtbase|mfc|atl)\d*(?:_\d+)?d?(?:-[a-f0-9]+)?\.dll$"),
               re.compile(r"^api-ms-win-crt-.*\.dll$"),
           ]
-          ALLOWED_DLLS = {"arrow.dll", "parquet.dll"}
+          # Non-CRT libraries this workflow itself builds from the verified Arrow source.
+          # arrow_python.dll is PyArrow's C++ bridge (built in the wheel step); CRT patterns are checked first.
+          ALLOWED_DLLS = {"arrow.dll", "parquet.dll", "arrow_python.dll"}
 
           def parse_pe(data: bytes):
               assert data[:2] == b"MZ", "Missing MZ"
