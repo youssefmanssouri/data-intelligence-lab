@@ -1,6 +1,11 @@
 name: PyArrow 18.1.0 CRT-Free Windows x64 Build (R8-R5)
 
 on:
+  # workflow_dispatch is only offered for workflows on the default branch, so a
+  # push trigger scoped to this dedicated branch starts the build here.
+  push:
+    branches:
+      - phase/1f3-8-r8-r5-pyarrow-ci
   workflow_dispatch:
 
 permissions:
