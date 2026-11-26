@@ -34,10 +34,12 @@ idna==3.20 \
 opentelemetry-api==1.45.2 \
     --hash=sha256:2cbd737377e710ee740d261c94e93fa0f08e6d037c18f17513cc0a2d94479a34
 
-# NOTE: this PyPI wheel bundles pyarrow/msvcp140.dll (Microsoft CRT); to be replaced by the CRT-free
-# source-built wheel from the R8-R5 CI workflow once that wheel is verified.
+# Source-built, CRT-free wheel (not on PyPI): MSVC /MD, no bundled Microsoft CRT. Accepted from
+# R8-R5-CI run 45765026782 and published as the pre-release
+# build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782. packaging/prepare_wheelhouse.py takes it
+# from a local file; the PyPI wheel (which bundles pyarrow/msvcp140.dll) cannot match this hash.
 pyarrow==18.1.0 \
-    --hash=sha256:0ad4892617e1a6c7a551cfc827e072a633eaff758fa09f21c4ee548c30bcaf99
+    --hash=sha256:00d2f53ae4e4e0edae7b73776378ae33d21704fcfbc22fe245538be0202a7840
 
 pydantic==2.14.1 \
     --hash=sha256:9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454
