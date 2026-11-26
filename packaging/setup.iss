@@ -10,7 +10,8 @@
   #define AppVersion "1.0.0"
 #endif
 #define MyAppPublisher "Data Intelligence Lab Project"
-#define MyAppId "{{D1A7B1CE-1A8B-4C9D-9E5A-3A6D47C3B8E1}}"
+; "{{" escapes a literal "{" in Inno Setup; "}" needs no escape (a second one would become part of the AppId).
+#define MyAppId "{{D1A7B1CE-1A8B-4C9D-9E5A-3A6D47C3B8E1}"
 #ifndef BundleDir
   #error Define BundleDir: ISCC.exe /DBundleDir=<path to the bundle staged by build_runtime_bundle.py>
 #endif
