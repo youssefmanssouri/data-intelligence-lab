@@ -1,8 +1,11 @@
 """Temporary SQLite gate tests; child processes only contend for admission."""
 
+from contextlib import closing
 from dataclasses import replace
 import multiprocessing
+import queue
 import sqlite3
+import time
 
 import pytest
 
@@ -24,7 +27,7 @@ def test_acquire_commit_release(ledger):
     assert len(lease.owner_token) == 32
     assert ledger.inspect().state == "HELD"
     # Separate connection can obtain a writer transaction: none remains open.
-    with ledger._connect() as db:
+    with closing(ledger._connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         assert db.execute("SELECT job_id FROM admission").fetchone()[0] == JOB
         db.rollback()
@@ -100,7 +103,7 @@ def test_unusable_database_is_not_repaired(tmp_path, case):
         path.touch()
     else:
         gate.initialize()
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("DELETE FROM admission")
     before = path.read_bytes()
     with pytest.raises(ControllerError) as caught:
@@ -164,6 +167,36 @@ def test_singleton_constraint_and_stale_release(ledger):
     assert ledger.inspect().owner_token == new.owner_token
 
 
+# Hang guard for spawned children; success never waits on it. Must exceed the
+# 15 s barrier timeout in fakes.contend so a missing sibling surfaces as a
+# child failure rather than a parent timeout.
+CHILD_HANG_GUARD_S = 20
+
+
+def _next_result(results, children):
+    """Return the next child result, failing fast and descriptively.
+
+    A child that exits non-zero before reporting fails immediately with its
+    exit code instead of an opaque queue.Empty after the full guard period.
+    """
+    deadline = time.monotonic() + CHILD_HANG_GUARD_S
+    while True:
+        try:
+            return results.get(timeout=0.1)
+        except queue.Empty:
+            pass
+        crashed = [(c.name, c.exitcode) for c in children if c.exitcode not in (None, 0)]
+        assert not crashed, f"child exited before reporting a result: {crashed}"
+        assert time.monotonic() < deadline, (
+            f"no child result within {CHILD_HANG_GUARD_S}s; "
+            f"alive={[(c.name, c.is_alive()) for c in children]}")
+
+
+def _join_ok(child):
+    child.join(timeout=CHILD_HANG_GUARD_S)
+    assert child.exitcode == 0, f"{child.name} exitcode={child.exitcode}"
+
+
 def test_cross_process_contention_and_owner_exit(tmp_path):
     path = tmp_path / "shared.sqlite"
     gate = AdmissionLedger(path)
@@ -176,10 +209,9 @@ def test_cross_process_contention_and_owner_exit(tmp_path):
     try:
         for child in children:
             child.start()
-        outcomes = [results.get(timeout=20) for _ in children]
+        outcomes = [_next_result(results, children) for _ in children]
         for child in children:
-            child.join(timeout=20)
-            assert child.exitcode == 0
+            _join_ok(child)
         states = [x[0] for x in outcomes]
         assert set(states) <= {"BUSY", "HELD"}
         assert states.count("HELD") <= 1
@@ -189,14 +221,66 @@ def test_cross_process_contention_and_owner_exit(tmp_path):
         # policy in the ledger or controller.
         if "HELD" not in states:
             assert gate.inspect().state == "IDLE"
+            # Keep a parent-side reference: Process.start() drops its args, and
+            # with "spawn" a SemLock is unlinked when the parent object is freed,
+            # so an inline Barrier makes the child fail to reopen it (ENOENT).
+            owner_barrier = context.Barrier(1)
             owner = context.Process(target=contend,
-                args=(path, b"c"*16, context.Barrier(1), results))
+                args=(path, b"c"*16, owner_barrier, results))
             children.append(owner)
             owner.start()
-            assert results.get(timeout=20)[0] == "HELD"
-            owner.join(timeout=20)
-            assert owner.exitcode == 0
+            assert _next_result(results, [owner])[0] == "HELD"
+            _join_ok(owner)
         assert gate.inspect().state == "HELD"  # Owner has exited, no recovery.
+        with pytest.raises(ControllerError) as caught:
+            gate.acquire(JOB)
+        assert caught.value.code == ErrorCode.BUSY
+    finally:
+        for child in children:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=5)
+        results.close()
+        results.join_thread()
+
+
+def test_forced_both_busy_then_uncontended_owner_exit(tmp_path):
+    """Deterministically cover the rare both-BUSY branch of the test above.
+
+    The parent holds the writer lock while both children contend, so both must
+    observe BUSY and leave the slot IDLE; an uncontended owner then acquires,
+    exits, and the slot stays HELD with no recovery.
+    """
+    path = tmp_path / "shared.sqlite"
+    gate = AdmissionLedger(path)
+    gate.initialize()
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(2)
+    owner_barrier = context.Barrier(1)  # Parent reference outlives the child.
+    results = context.Queue()
+    children = [context.Process(target=contend, args=(path, bytes([i])*16, barrier, results))
+                for i in (1, 2)]
+    try:
+        lock = gate._connect()
+        try:
+            lock.execute("BEGIN IMMEDIATE")
+            for child in children:
+                child.start()
+            outcomes = [_next_result(results, children) for _ in children]
+            for child in children:
+                _join_ok(child)
+        finally:
+            lock.rollback()
+            lock.close()
+        assert sorted(outcomes) == [("BUSY", bytes([1])*16), ("BUSY", bytes([2])*16)]
+        assert gate.inspect().state == "IDLE"
+        owner = context.Process(target=contend, args=(path, b"c"*16, owner_barrier, results))
+        children.append(owner)
+        owner.start()
+        assert _next_result(results, [owner]) == ("HELD", b"c"*16)
+        _join_ok(owner)
+        record = gate.inspect()
+        assert (record.state, record.job_id) == ("HELD", b"c"*16)  # Owner exited, no recovery.
         with pytest.raises(ControllerError) as caught:
             gate.acquire(JOB)
         assert caught.value.code == ErrorCode.BUSY

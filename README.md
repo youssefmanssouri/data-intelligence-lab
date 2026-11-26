@@ -8,13 +8,44 @@ The platform is designed around a **hybrid operational model**: prioritizing a l
 
 ---
 
+## Screenshots
+
+Captured from the current development build running locally (Next.js frontend + FastAPI backend), using a synthetic sample CSV (`sales_orders_2025.csv`, 3,024 rows × 13 columns). All values shown are computed by the real backend for that sample file.
+
+**Data Health Dashboard**: dataset totals, missing values by column, the health score split by its 60/30/10 weights, quality notes and column profiles.
+
+![Data Health Dashboard](docs/screenshots/dashboard.png)
+
+**Upload**: CSV import with the scoring method explained up front.
+
+![Upload page](docs/screenshots/upload.png)
+
+<table>
+  <tr>
+    <td width="60%"><strong>Column profile</strong>: an expanded column with its type-specific statistics.<br><br><img src="docs/screenshots/column-profile.png" alt="Expanded column profile with statistics"></td>
+    <td width="40%"><strong>Mobile</strong>: the sidebar collapses into a top bar.<br><br><img src="docs/screenshots/dashboard-mobile.png" alt="Dashboard on a phone-sized screen"></td>
+  </tr>
+</table>
+
+---
+
 ## Current Project Status: Milestone 4B-1 Local API Boundary Implemented
 
 - **Overall Roadmap Progress:** ~42%
 - **Domain Core (Phases 1–3):** Implemented and frozen (resource safety, strict CSV parsing, explicit type inference and statistical profiling).
 - **Persistence Adapter (Milestone 4A):** Implemented and frozen (atomic Parquet + metadata persistence).
 - **Local API Boundary (Milestone 4B-1):** Implemented (FastAPI delivery layer, `IExecutionAdapter` port, `LocalExecutionAdapter`, RFC 7807 error boundary).
-- **Automated Tests:** 389 passed, 0 failed across unit and integration suites (1 warning). Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+- **Automated Tests** (verified 26 November 2026 on commit `e0156c6`, Linux, Python 3.13, Node 22): all suites pass, 1,271 tests, 0 failed. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+
+  | Suite | Command | Result |
+  | --- | --- | --- |
+  | Backend unit, integration & worker contract | `pytest` | 1,194 passed, 0 failed, 0 warnings (`pytest.ini` fails the run on any warning). The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
+  | Frontend UI (mocked API) | `npm test` | 36 passed |
+  | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
+  | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
+  | Lint, type check, production build | `npm run lint`, `typecheck`, `build` | All pass |
+
+  The Playwright configs are cross-platform: they start the server with `node scripts/server.mjs`, and `npm run test:real` uses `DIL_PYTHON` when set, otherwise the repository `.venv` Python if it exists (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` elsewhere), otherwise the system Python on `PATH` (`python` on Windows, `python3` elsewhere). CI runs every suite above on Linux.
 - **Documentation:**
   - [Product Definition](docs/01-product-definition.md): Vision, user personas, 8-stage analytical pipeline, measurable acceptance criteria, and non-goals.
   - [Architecture Specification](docs/02-architecture.md): Hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline, and ADRs.

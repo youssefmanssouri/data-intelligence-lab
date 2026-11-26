@@ -53,10 +53,15 @@ export default function UploadPanel() {
     }
   }
   return (
-    <form onSubmit={submit} className={s.panel} aria-busy={busy} noValidate>
-      <div className={s.panelTop}>
+    <form
+      onSubmit={submit}
+      className={`${s.card} ${s.panel}`}
+      aria-busy={busy}
+      noValidate
+    >
+      <div className={s.cardHead}>
         <h2>Import a dataset</h2>
-        <span className={s.index}>01 / CSV</span>
+        <span className={s.pill}>CSV · below 200 MiB</span>
       </div>
       <label
         className={s.drop}
@@ -73,6 +78,19 @@ export default function UploadPanel() {
           select(event.dataTransfer.files[0]);
         }}
       >
+        <span className={s.dropIcon} aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            focusable="false"
+          >
+            <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
+          </svg>
+        </span>
         <span className={s.dropTitle}>Bring your data into focus.</span>
         <span className={s.help} id="file-help">
           Choose or drop one CSV. A header row is required.
@@ -93,25 +111,29 @@ export default function UploadPanel() {
         upload framing.
       </p>
       {file ? (
-        <p className={s.selected}>Selected: {sourceName(file.name)}</p>
+        <p className={s.selected}>
+          Selected: <b>{sourceName(file.name)}</b>
+        </p>
       ) : null}
       {error ? (
         <div ref={errorRef} tabIndex={-1} role="alert" className={s.error}>
           <p>{error}</p>
-          <p className={s.help}>
+          <p>
             Choose another file or try again. Uploads are never retried
             automatically.
           </p>
         </div>
       ) : null}
-      <button
-        className={`${s.primary} ${s.full}`}
-        type="submit"
-        disabled={busy || !!(file && fileError(file))}
-      >
-        {busy ? "Uploading & profiling…" : "Create data profile"}
-        <span aria-hidden="true">↗</span>
-      </button>
+      <div className={s.submitRow}>
+        <button
+          className={`${s.primary} ${s.full}`}
+          type="submit"
+          disabled={busy || !!(file && fileError(file))}
+        >
+          {busy ? "Uploading & profiling…" : "Create data profile"}
+          <span aria-hidden="true">↗</span>
+        </button>
+      </div>
       {busy ? (
         <div role="status" className={s.status}>
           <p>Uploading and analysing your CSV. Please keep this page open.</p>
