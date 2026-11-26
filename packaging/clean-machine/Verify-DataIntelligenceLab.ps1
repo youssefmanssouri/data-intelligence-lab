@@ -102,7 +102,9 @@ $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 $Evidence.os = [ordered]@{
     ProductName = $cv.ProductName; DisplayVersion = $cv.DisplayVersion; EditionID = $cv.EditionID
     CurrentBuild = $cv.CurrentBuild; UBR = $cv.UBR
-    Family = $(if ([int]$cv.CurrentBuild -ge 22000) { "Windows 11" } else { "Windows 10" })
+    InstallationType = $cv.InstallationType
+    # Server 2025 shares build 26100 with Windows 11 24H2: classify servers by InstallationType first.
+    Family = $(if ($cv.InstallationType -ne "Client") { "Windows Server" } elseif ([int]$cv.CurrentBuild -ge 22000) { "Windows 11" } else { "Windows 10" })
     Is64Bit = [Environment]::Is64BitOperatingSystem
     Culture = (Get-Culture).Name
 }
