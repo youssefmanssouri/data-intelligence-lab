@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from dataclasses import replace
+import gc
 import multiprocessing
 import queue
 import sqlite3
@@ -173,6 +174,31 @@ def test_singleton_constraint_and_stale_release(ledger):
 CHILD_HANG_GUARD_S = 20
 
 
+@pytest.fixture
+def no_cyclic_gc():
+    """Keep the cyclic GC out of multiprocessing's resource tracker.
+
+    These tests leave Barrier/Queue SemLocks in reference cycles (for example
+    test frame -> pytest.raises ExceptionInfo -> traceback -> frame). If a later
+    collection frees them while this process is inside the resource tracker
+    (registering a new SemLock or spawning a child), the SemLock finalizer
+    re-enters it. CPython 3.12 reports that as an unraisable UserWarning
+    ("ResourceTracker called reentrantly"), which filterwarnings=error turns
+    into a failure of whichever test is running; 3.13+ queue the message instead.
+    Collecting at safe points and pausing automatic collection in between makes
+    finalization deterministic. It changes no assertion.
+    """
+    gc.collect()
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+        gc.collect()
+
+
 def _next_result(results, children):
     """Return the next child result, failing fast and descriptively.
 
@@ -197,7 +223,7 @@ def _join_ok(child):
     assert child.exitcode == 0, f"{child.name} exitcode={child.exitcode}"
 
 
-def test_cross_process_contention_and_owner_exit(tmp_path):
+def test_cross_process_contention_and_owner_exit(tmp_path, no_cyclic_gc):
     path = tmp_path / "shared.sqlite"
     gate = AdmissionLedger(path)
     gate.initialize()
@@ -244,7 +270,7 @@ def test_cross_process_contention_and_owner_exit(tmp_path):
         results.join_thread()
 
 
-def test_forced_both_busy_then_uncontended_owner_exit(tmp_path):
+def test_forced_both_busy_then_uncontended_owner_exit(tmp_path, no_cyclic_gc):
     """Deterministically cover the rare both-BUSY branch of the test above.
 
     The parent holds the writer lock while both children contend, so both must
