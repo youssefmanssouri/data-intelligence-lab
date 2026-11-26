@@ -27,10 +27,13 @@ import zipfile
 # ---------------------------------------------------------------------------
 
 PYTHON_EMBED_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
+# UNVERIFIED: not yet checked against the file published on python.org. Every other pin in
+# this repository was found not to match its published file; verify this before a release.
 PYTHON_EMBED_SHA256 = "0ec2820573e895c2cb98ee43c08182ecbf84f1aa63b7eef4d4008272993fbce8"
 
 NODE_EXE_URL = "https://nodejs.org/dist/v20.18.3/win-x64/node.exe"
-NODE_EXE_SHA256 = "663ea119b4fcb51cb5380582d9213bc834ea2775fba1895bfbb0445d3bc64e2e"
+# Matches https://nodejs.org/dist/v20.18.3/SHASUMS256.txt ("win-x64/node.exe") and the downloaded file.
+NODE_EXE_SHA256 = "528a9aa64888a2a3ba71c6aea89434dd5ab5cb3caa9f0f31345cf5facf685ab0"
 
 CRT_DLL_NAMES = frozenset({
     "msvcp140.dll",
