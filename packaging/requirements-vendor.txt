@@ -2,8 +2,9 @@
 # Fully pinned dependency closure with strict cryptographic SHA-256 hashes for reproducible vendoring.
 # Each hash is the published PyPI SHA-256 of the one wheel pip selects for cp312-win_amd64.
 # Closure = what production code imports (fastapi, starlette, uvicorn, python-multipart, pyarrow)
-# plus their required dependencies. pandas, numpy (via pandas), python-dateutil, pytz, six, tzdata,
-# httpx, httpcore and certifi are not used by production code and are not vendored.
+# plus their required dependencies, and tzdata (see its entry). pandas, numpy (via pandas),
+# python-dateutil, pytz, six, httpx, httpcore and certifi are not used by production code and are
+# not vendored.
 
 annotated-doc==0.0.5 \
     --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101
@@ -58,6 +59,12 @@ typing-extensions==4.16.0 \
 
 typing-inspection==0.4.4 \
     --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
+
+# Required on Windows: Python's zoneinfo has no OS time zone database there. The backend stores a
+# zero UTC offset as the zone name "UTC", and reading it back resolves it through zoneinfo
+# (ZoneInfoNotFoundError without tzdata, found by the Windows closure run 45785858239).
+tzdata==2026.5 \
+    --hash=sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac
 
 uvicorn==0.54.0 \
     --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf
