@@ -1,8 +1,14 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
-// Backend interpreter: DIL_PYTHON when set (CI), else the repository venv.
+// Backend interpreter: DIL_PYTHON when set (CI), else the repository venv if it
+// exists, else the system Python on PATH.
+const isWindows = process.platform === "win32";
+const venvPython = path.join(__dirname, "..", ".venv",
+  ...(isWindows ? ["Scripts", "python.exe"] : ["bin", "python"]));
 const python =
   process.env.DIL_PYTHON ??
-  (process.platform === "win32" ? "..\\.venv\\Scripts\\python.exe" : "../.venv/bin/python");
+  (existsSync(venvPython) ? venvPython : isWindows ? "python" : "python3");
 export default defineConfig({
   testDir: "./tests",
   testMatch: "real.spec.ts",
