@@ -1,4 +1,14 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
+// Backend interpreter: DIL_PYTHON when set (CI), else the repository venv if it
+// exists, else the system Python on PATH.
+const isWindows = process.platform === "win32";
+const venvPython = path.join(__dirname, "..", ".venv",
+  ...(isWindows ? ["Scripts", "python.exe"] : ["bin", "python"]));
+const python =
+  process.env.DIL_PYTHON ??
+  (existsSync(venvPython) ? venvPython : isWindows ? "python" : "python3");
 export default defineConfig({
   testDir: "./tests",
   testMatch: "real.spec.ts",
@@ -16,13 +26,13 @@ export default defineConfig({
   projects: [{ name: "real-chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
-      command: "..\\.venv\\Scripts\\python.exe tests/backend_server.py",
+      command: `"${python}" tests/backend_server.py`,
       url: "http://127.0.0.1:8000/health",
       reuseExistingServer: false,
       timeout: 30_000,
     },
     {
-      command: "npm.cmd run start -- --port 3101",
+      command: "node scripts/server.mjs --port 3101",
       url: "http://127.0.0.1:3101",
       reuseExistingServer: false,
       timeout: 60_000,
