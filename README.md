@@ -35,17 +35,17 @@ Captured from the current development build running locally (Next.js frontend + 
 - **Domain Core (Phases 1–3):** Implemented and frozen (resource safety, strict CSV parsing, explicit type inference and statistical profiling).
 - **Persistence Adapter (Milestone 4A):** Implemented and frozen (atomic Parquet + metadata persistence).
 - **Local API Boundary (Milestone 4B-1):** Implemented (FastAPI delivery layer, `IExecutionAdapter` port, `LocalExecutionAdapter`, RFC 7807 error boundary).
-- **Automated Tests** (verified 25 November 2026, Linux, Python 3.13, Node 22; backend re-verified on commit `a943f2b`): all suites pass, 1,271 tests, 0 failed. CI (GitHub Actions) runs `pytest` on Python 3.12 and 3.13 plus the frontend lint, typecheck, build and proxy tests on every pull request. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+- **Automated Tests** (verified 26 November 2026 on commit `e0156c6`, Linux, Python 3.13, Node 22): all suites pass, 1,271 tests, 0 failed. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
 
   | Suite | Command | Result |
   | --- | --- | --- |
-  | Backend unit, integration & worker contract | `pytest` | 1,194 passed, 0 failed, 0 warnings |
+  | Backend unit, integration & worker contract | `pytest` | 1,194 passed, 0 failed, 0 warnings (`pytest.ini` fails the run on any warning). The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
   | Frontend UI (mocked API) | `npm test` | 36 passed |
   | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
   | API proxy & security | `npm run test:proxy` | 35 passed, 0 failed |
   | Lint, type check, production build | `npm run lint`, `typecheck`, `build` | All pass |
 
-  The Playwright configs launch the server with `npm.cmd` (Windows). The Linux run above used a temporary, uncommitted config override for the start command and the browser path; the tests themselves were unchanged.
+  The Playwright configs are cross-platform: they start the server with `node scripts/server.mjs`, and `npm run test:real` uses the repository `.venv` Python (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` elsewhere) unless `DIL_PYTHON` is set. CI runs every suite above on Linux.
 - **Documentation:**
   - [Product Definition](docs/01-product-definition.md): Vision, user personas, 8-stage analytical pipeline, measurable acceptance criteria, and non-goals.
   - [Architecture Specification](docs/02-architecture.md): Hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline, and ADRs.
