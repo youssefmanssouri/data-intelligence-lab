@@ -419,3 +419,10 @@ def test_setup_iss_uninstall_removes_runtime_cache_but_never_storage() -> None:
     entries = [line for line in section.splitlines() if line.startswith("Type:")]
     assert entries and all('"{app}\\' in line for line in entries)
     assert all("storage" not in line.lower() and "{userprofile}" not in line.lower() for line in entries)
+
+
+def test_setup_iss_app_id_is_a_single_braced_guid() -> None:
+    content = _iss()
+    m = re.search(r'#define MyAppId "(\{\{[0-9A-F-]{36}\})"', content)
+    assert m, "AppId must be written {{GUID} so it expands to exactly {GUID}"
+    assert not m.group(1).endswith("}}")

@@ -83,6 +83,25 @@ def uninstall_entry() -> Optional[Dict[str, str]]:
         return None
 
 
+def find_uninstall_keys(fragment: str) -> List[str]:
+    """Diagnostics: every Uninstall subkey (HKCU/HKLM, both views) whose name contains ``fragment``."""
+    import winreg
+
+    found = []
+    base = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+    for hive, hive_name in ((winreg.HKEY_CURRENT_USER, "HKCU"), (winreg.HKEY_LOCAL_MACHINE, "HKLM")):
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(hive, base, 0, winreg.KEY_READ | view) as key:
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        name = winreg.EnumKey(key, i)
+                        if fragment.lower() in name.lower():
+                            found.append(f"{hive_name}({'64' if view == winreg.KEY_WOW64_64KEY else '32'})\\{name}")
+            except OSError:
+                pass
+    return sorted(set(found))
+
+
 def run_setup(setup: Path, app_dir: Path, log: Path, extra: Optional[List[str]] = None) -> int:
     cmd = [str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DIR={app_dir}", f"/LOG={log}"]
     return subprocess.run(cmd + (extra or []), timeout=900).returncode
@@ -126,7 +145,10 @@ def lifecycle(setup: Path, vc_gate_setup: Path, bundle: Path, work: Path, eviden
     check("no-desktop-shortcut-by-default", not desktop.exists())
     entry = uninstall_entry()
     evidence["uninstall_entry"] = entry
-    check("uninstall-entry", bool(entry) and same_path(entry.get("InstallLocation", ""), app_dir), entry)
+    if not entry:
+        evidence["uninstall_keys_found"] = find_uninstall_keys("D1A7B1CE")
+    check("uninstall-entry", bool(entry) and same_path(entry.get("InstallLocation", ""), app_dir),
+          entry or evidence.get("uninstall_keys_found"))
 
     # 2. Installed copy, tested in place
     smoke_work = work / "smoke"
