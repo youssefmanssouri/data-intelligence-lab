@@ -51,6 +51,10 @@ _READINESS = _Problem(
     503, "Service Unavailable", "Storage subsystem is not ready or writable.",
     "ERR_STORAGE_NOT_READY",
 )
+_FORBIDDEN_REQUEST = _Problem(
+    403, "Forbidden", "Only local, same-origin requests are accepted.",
+    "ERR_FORBIDDEN_REQUEST",
+)
 
 # Categories are application-owned types; their mutable attributes supply no text.
 _DOMAIN_PROBLEMS = {
@@ -77,7 +81,7 @@ _DOMAIN_PROBLEMS = {
 }
 _CODE_PROBLEMS = {
     problem.code: problem
-    for problem in (*_DOMAIN_PROBLEMS.values(), _INTERNAL, _VALIDATION, _READINESS)
+    for problem in (*_DOMAIN_PROBLEMS.values(), _INTERNAL, _VALIDATION, _READINESS, _FORBIDDEN_REQUEST)
 }
 _HTTP_CODES = {404: "ERR_NOT_FOUND"}
 

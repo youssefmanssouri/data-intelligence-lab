@@ -121,7 +121,7 @@ def app(isolated_storage: Path):
 @pytest.fixture
 def client(app):
     """Provides a TestClient with server exceptions contained (raise_server_exceptions=False)."""
-    return TestClient(app, raise_server_exceptions=False)
+    return TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
 
 # =====================================================================
@@ -253,7 +253,7 @@ def test_health_isolated_from_storage_state() -> None:
     """GET /health succeeds even when storage backend readiness fails."""
     unready_adapter = StubExecutionAdapter(readiness=False)
     application = create_app(adapter=unready_adapter)
-    test_client = TestClient(application, raise_server_exceptions=False)
+    test_client = TestClient(application, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     response = test_client.get("/health")
     assert response.status_code == 200
@@ -271,7 +271,7 @@ def test_readiness_returns_503_when_storage_unready() -> None:
     """GET /ready returns 503 problem details when storage readiness check fails."""
     unready_adapter = StubExecutionAdapter(readiness=False)
     application = create_app(adapter=unready_adapter)
-    test_client = TestClient(application, raise_server_exceptions=False)
+    test_client = TestClient(application, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     response = test_client.get("/ready")
     assert response.status_code == 503
@@ -290,7 +290,7 @@ def test_readiness_with_real_unwritable_storage_dir(tmp_path: Path) -> None:
     datasets_file.write_text("blocking_file")
 
     app_with_broken_storage = create_app(storage_dir=blocked_dir)
-    client_broken = TestClient(app_with_broken_storage, raise_server_exceptions=False)
+    client_broken = TestClient(app_with_broken_storage, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     response = client_broken.get("/ready")
     assert response.status_code == 503
@@ -308,7 +308,7 @@ def test_b1_03_settings_upload_limit_enforced_with_default_adapter(isolated_stor
         storage_dir=isolated_storage,
         settings=Settings(max_upload_bytes=500),
     )
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     large_csv = b"col1,col2\n" + b"12345,67890\n" * 50  # ~600 bytes
     files = {"file": ("large.csv", io.BytesIO(large_csv), "text/csv")}
@@ -328,7 +328,7 @@ def test_b1_03_environment_max_upload_bytes_enforced(
     """MAX_UPLOAD_BYTES=500 in environment enforces 500-byte cap via ordinary create_app() path."""
     monkeypatch.setenv("MAX_UPLOAD_BYTES", "500")
     app_instance = create_app(storage_dir=isolated_storage)
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     large_csv = b"col1,col2\n" + b"12345,67890\n" * 50  # ~600 bytes
     files = {"file": ("large.csv", io.BytesIO(large_csv), "text/csv")}
@@ -350,7 +350,7 @@ def test_b1_03_limit_precedence_injected_vs_settings(isolated_storage: Path) -> 
     # 1. Smaller Settings (500) + default 200MB adapter -> 500 enforced
     adapter_default = LocalExecutionAdapter(storage_dir=isolated_storage)
     app1 = create_app(adapter=adapter_default, settings=Settings(max_upload_bytes=500))
-    c1 = TestClient(app1, raise_server_exceptions=False)
+    c1 = TestClient(app1, raise_server_exceptions=False, base_url="http://127.0.0.1")
     res1 = c1.post("/api/v1/datasets/upload", files={"file": ("f.csv", io.BytesIO(b"x\n" + b"1\n" * 300), "text/csv")})
     assert res1.status_code == 413
     assert "500 bytes" in res1.json()["detail"]
@@ -358,7 +358,7 @@ def test_b1_03_limit_precedence_injected_vs_settings(isolated_storage: Path) -> 
     # 2. Injected adapter with smaller limit (300) + default Settings (200MB) -> 300 enforced
     adapter_small = StubExecutionAdapter(max_upload_bytes=300)
     app2 = create_app(adapter=adapter_small, settings=Settings(max_upload_bytes=200 * 1024 * 1024))
-    c2 = TestClient(app2, raise_server_exceptions=False)
+    c2 = TestClient(app2, raise_server_exceptions=False, base_url="http://127.0.0.1")
     res2 = c2.post("/api/v1/datasets/upload", files={"file": ("f.csv", io.BytesIO(b"x\n" + b"1\n" * 200), "text/csv")})
     assert res2.status_code == 413
     assert "300 bytes" in res2.json()["detail"]
@@ -366,7 +366,7 @@ def test_b1_03_limit_precedence_injected_vs_settings(isolated_storage: Path) -> 
     # 3. Injected adapter with larger limit (1000) + smaller Settings (500) -> 500 enforced
     adapter_large = StubExecutionAdapter(max_upload_bytes=1000)
     app3 = create_app(adapter=adapter_large, settings=Settings(max_upload_bytes=500))
-    c3 = TestClient(app3, raise_server_exceptions=False)
+    c3 = TestClient(app3, raise_server_exceptions=False, base_url="http://127.0.0.1")
     res3 = c3.post("/api/v1/datasets/upload", files={"file": ("f.csv", io.BytesIO(b"x\n" + b"1\n" * 300), "text/csv")})
     assert res3.status_code == 413
     assert "500 bytes" in res3.json()["detail"]
@@ -410,7 +410,7 @@ def test_b1_03_content_length_variations(header_kind: str) -> None:
             elif msg["type"] == "http.response.body":
                 response_data["body"] = msg.get("body", b"")
 
-        headers_list = [(b"content-type", f"multipart/form-data; boundary={boundary}".encode())]
+        headers_list = [(b"host", b"127.0.0.1:8000"), (b"content-type", f"multipart/form-data; boundary={boundary}".encode())]
         if header_kind == "truthful_oversized":
             headers_list.append((b"content-length", str(total_bytes_to_send).encode()))
         elif header_kind == "invalid":
@@ -504,7 +504,7 @@ def test_b1_03_instrumented_receive_cutoff_and_no_downstream_publication(
             "path": "/api/v1/datasets/upload",
             "raw_path": b"/api/v1/datasets/upload",
             "query_string": b"",
-            "headers": [(b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
+            "headers": [(b"host", b"127.0.0.1:8000"), (b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
             "client": ("127.0.0.1", 50000),
             "server": ("127.0.0.1", 8000),
         }
@@ -568,7 +568,7 @@ def test_b1_03_partial_spools_closed_on_rejection_and_cancellation() -> None:
                 "path": "/api/v1/datasets/upload",
                 "raw_path": b"/api/v1/datasets/upload",
                 "query_string": b"",
-                "headers": [(b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
+                "headers": [(b"host", b"127.0.0.1:8000"), (b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
                 "client": ("127.0.0.1", 50000),
                 "server": ("127.0.0.1", 8000),
             }
@@ -615,7 +615,7 @@ def test_b1_03_partial_spools_closed_on_rejection_and_cancellation() -> None:
                 "path": "/api/v1/datasets/upload",
                 "raw_path": b"/api/v1/datasets/upload",
                 "query_string": b"",
-                "headers": [(b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
+                "headers": [(b"host", b"127.0.0.1:8000"), (b"content-type", f"multipart/form-data; boundary={boundary}".encode())],
                 "client": ("127.0.0.1", 50000),
                 "server": ("127.0.0.1", 8000),
             }
@@ -641,7 +641,7 @@ def test_b1_03_small_upload_and_health_readiness_succeed(isolated_storage: Path)
         storage_dir=isolated_storage,
         settings=Settings(max_upload_bytes=500),
     )
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     # Health & readiness
     res_health = test_client.get("/health")
@@ -890,7 +890,7 @@ def test_b1_02_storage_failures_serialized_response_all_audit_paths(path_case: s
             raise StorageError(f"Internal storage error accessing {path_case}")
 
     app_instance = create_app(adapter=LeakyStorageAdapter())
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     response = test_client.get("/api/v1/datasets/ds_audit_test")
     assert response.status_code == 500
@@ -929,7 +929,7 @@ def test_b1_02_http_exceptions_serialized_response_all_audit_paths(path_case: st
         exc.code = "ERR_NOT_FOUND"
         raise exc
 
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
     response = test_client.get("/test-http-audit-leak")
 
     assert response.status_code == 404
@@ -958,7 +958,7 @@ def test_b1_02_safe_http_exception_detail_published() -> None:
     def safe_endpoint() -> None:
         raise FileSizeLimitHTTPError(max_bytes=500, actual_bytes=600)
 
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
     response = test_client.get("/test-safe-http-detail")
 
     assert response.status_code == 413
@@ -972,7 +972,7 @@ def test_b1_02_safe_http_exception_detail_published() -> None:
 def test_b1_02_validation_error_does_not_leak_raw_sensitive_input() -> None:
     """Proves validation errors do not echo raw sensitive input objects or paths."""
     app_instance = create_app()
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
 
     sentinel_secret = "C:\\Users\\O'Brien\\AUDIT_PRIVATE_SENTINEL\\file.csv"
     response = test_client.post(
@@ -1002,7 +1002,7 @@ def test_b1_02_unhandled_and_chained_exceptions_generic_500() -> None:
         except FileNotFoundError as err:
             raise RuntimeError("Database error with /mnt/AUDIT_PRIVATE_SENTINEL/token.key") from err
 
-    test_client = TestClient(app_instance, raise_server_exceptions=False)
+    test_client = TestClient(app_instance, raise_server_exceptions=False, base_url="http://127.0.0.1")
     response = test_client.get("/crash-chained")
 
     assert response.status_code == 500
@@ -1158,7 +1158,7 @@ def test_b1_02_controlled_messages_ignore_exception_text_and_attributes(case):
         def get_dataset_metadata(self, dataset_id):
             raise exc
 
-    with TestClient(create_app(adapter=FaultAdapter()), raise_server_exceptions=False) as client:
+    with TestClient(create_app(adapter=FaultAdapter()), raise_server_exceptions=False, base_url="http://127.0.0.1") as client:
         response = client.get("/api/v1/datasets/ds_probe")
     _assert_controlled_problem(response, status, title, detail, code)
 
@@ -1172,7 +1172,7 @@ def test_b1_02_invalid_http_status_is_safe_internal_error(status):
             exc.is_safe_public = True
             raise exc
 
-    with TestClient(create_app(adapter=FaultAdapter()), raise_server_exceptions=False) as client:
+    with TestClient(create_app(adapter=FaultAdapter()), raise_server_exceptions=False, base_url="http://127.0.0.1") as client:
         response = client.get("/api/v1/datasets/ds_probe")
     _assert_controlled_problem(
         response, 500, "Internal Server Error",
@@ -1207,7 +1207,7 @@ def test_b1_02_every_domain_category_ignores_mutated_diagnostics(exc, status, ti
         def get_dataset_metadata(self, dataset_id):
             raise exc
 
-    with TestClient(create_app(adapter=FaultAdapter()), raise_server_exceptions=False) as client:
+    with TestClient(create_app(adapter=FaultAdapter()), raise_server_exceptions=False, base_url="http://127.0.0.1") as client:
         response = client.get("/api/v1/datasets/ds_probe")
     _assert_controlled_problem(response, status, title, detail, code)
 
@@ -1284,7 +1284,7 @@ async def _audit_asgi_upload(application, chunks, *, content_length=None, cancel
         return {"type": "http.request", "body": chunk, "more_body": len(received) < len(chunks)}
     async def send(message):
         sent.append(message)
-    headers = [(b"content-type", f"multipart/form-data; boundary={boundary}".encode())]
+    headers = [(b"host", b"127.0.0.1:8000"), (b"content-type", f"multipart/form-data; boundary={boundary}".encode())]
     if content_length is not None:
         headers.append((b"content-length", str(content_length).encode()))
     scope = {
