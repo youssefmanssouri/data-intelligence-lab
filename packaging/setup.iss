@@ -210,10 +210,12 @@ begin
               end
               else if (Err = ERROR_ACCESS_DENIED) then
               begin
-                // Category 3: Access denied on a candidate process. Fail safe.
-                Category3Detected := True;
-                Category3Reason := 'Access denied querying process ID ' + IntToStr(pe.th32ProcessID) + ' (' + ExeName + ').';
-                Break;
+                // Category 2: a process of another account (or an elevated one). A standard user
+                // cannot query those, and they cannot be running from this user's per-user install
+                // folder. Failing here would block every standard user on a machine where another
+                // account runs Python or Node.js. Logged and ignored; if such a process did hold an
+                // installed file, replacing that file fails visibly later.
+                Log('Ignoring process ID ' + IntToStr(pe.th32ProcessID) + ' (' + ExeName + '): access denied (another account or elevated).');
               end
               else
               begin

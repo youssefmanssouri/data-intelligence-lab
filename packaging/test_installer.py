@@ -3,7 +3,7 @@ Data Intelligence Lab - installer lifecycle test (Windows only).
 
 Usage:
     python packaging/test_installer.py --setup <DataIntelligenceLab-Setup.exe>
-        --vc-gate-setup <setup compiled with /DVCMinMinor=99> --bundle <BUNDLE_DIR>
+        [--vc-gate-setup <setup compiled with /DVCMinMinor=99>] [--expect-standard-user] --bundle <BUNDLE_DIR>
         --work-dir <EMPTY_DIR> [--evidence out.json]
 
 Drives the real installer silently, as a per-user install, and checks:
@@ -48,6 +48,29 @@ from smoke_test_bundle import (  # noqa: E402
 APP_ID = "{D1A7B1CE-1A8B-4C9D-9E5A-3A6D47C3B8E1}"
 APP_NAME = "Data Intelligence Lab"
 UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}_is1"
+
+
+def account_info() -> Dict[str, object]:
+    import ctypes
+
+    return {"user": os.environ.get("USERNAME"), "is_admin": bool(ctypes.windll.shell32.IsUserAnAdmin())}
+
+
+def os_info() -> Dict[str, object]:
+    import platform
+    import winreg
+
+    info: Dict[str, object] = {"platform": platform.platform(), "version": platform.version()}
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as key:
+            for name in ("ProductName", "DisplayVersion", "CurrentBuild", "UBR", "InstallationType", "EditionID"):
+                try:
+                    info[name] = winreg.QueryValueEx(key, name)[0]
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return info
 
 
 def start_menu_dir() -> Path:
@@ -115,7 +138,8 @@ def verify_installed(app_dir: Path) -> Dict[str, object]:
     return verify_bundle(app_dir, allow_unlisted=lambda rel: rel in INSTALLER_FILES or rel.startswith(RUNTIME_CACHE_PREFIX))
 
 
-def lifecycle(setup: Path, vc_gate_setup: Path, bundle: Path, work: Path, evidence: Dict[str, object]) -> None:
+def lifecycle(setup: Path, vc_gate_setup: Optional[Path], bundle: Path, work: Path, evidence: Dict[str, object],
+              expect_standard_user: bool = False) -> None:
     if sys.platform != "win32":
         raise SmokeFailure("The installer targets Windows; run this test on Windows.")
     if work.exists() and any(work.iterdir()):
@@ -124,6 +148,11 @@ def lifecycle(setup: Path, vc_gate_setup: Path, bundle: Path, work: Path, eviden
     if uninstall_entry() is not None or start_menu_dir().exists():
         raise SmokeFailure("A previous Data Intelligence Lab installation exists for this user; use a clean account.")
     evidence["setup_sha256"] = compute_sha256(setup)
+    evidence["account"] = account_info()
+    evidence["os"] = os_info()
+    print(f"Account: {evidence['account']}  OS: {evidence['os']}")
+    if expect_standard_user:
+        check("standard-user-account", not evidence["account"]["is_admin"], evidence["account"])
     app_dir = work / "Local Programs" / APP_NAME
     bundle_manifest = (bundle / "manifest.json").read_bytes()
 
@@ -246,6 +275,8 @@ def lifecycle(setup: Path, vc_gate_setup: Path, bundle: Path, work: Path, eviden
         shutil.rmtree(sentinel.parent)
 
     # 6. VC++ prerequisite gate
+    if vc_gate_setup is None:
+        return
     gated_dir = work / "Gated" / APP_NAME
     code = run_setup(vc_gate_setup, gated_dir, work / "install-vc-gate.log")
     evidence["vc_gate_exit_code"] = code
@@ -259,15 +290,19 @@ def lifecycle(setup: Path, vc_gate_setup: Path, bundle: Path, work: Path, eviden
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--setup", required=True, type=Path)
-    parser.add_argument("--vc-gate-setup", required=True, type=Path)
+    parser.add_argument("--vc-gate-setup", type=Path, default=None,
+                        help="setup compiled with /DVCMinMinor=99 (omit to skip the gate check)")
+    parser.add_argument("--expect-standard-user", action="store_true",
+                        help="fail unless running without administrator rights")
     parser.add_argument("--bundle", required=True, type=Path)
     parser.add_argument("--work-dir", required=True, type=Path)
     parser.add_argument("--evidence", type=Path, default=None)
     args = parser.parse_args()
     evidence: Dict[str, object] = {}
     try:
-        lifecycle(args.setup.resolve(), args.vc_gate_setup.resolve(), args.bundle.resolve(),
-                  args.work_dir.resolve(), evidence)
+        lifecycle(args.setup.resolve(), args.vc_gate_setup.resolve() if args.vc_gate_setup else None,
+                  args.bundle.resolve(), args.work_dir.resolve(), evidence,
+                  expect_standard_user=args.expect_standard_user)
         evidence["result"] = "PASS"
         print("INSTALLER_LIFECYCLE_TEST: PASS")
         return 0

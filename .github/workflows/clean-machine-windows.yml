@@ -1,0 +1,330 @@
+name: Clean-machine verification on Windows (Milestone D)
+
+# Builds the installer once, publishes the clean-machine verification kit as an
+# artifact (for fresh Windows 10/11 VMs; GitHub has no hosted Windows client
+# runners), and verifies it on Windows Server 2022 and 2025:
+#   - as an administrator: full installer lifecycle (packaging/test_installer.py);
+#   - as a new standard (non-admin) local user: the kit itself, non-interactively,
+#     and the full installer lifecycle;
+#   - on a machine whose VC++ runtime has been really uninstalled
+#     (packaging/test_missing_vc_runtime.py, then kit phase 1 as a standard user).
+
+on:
+  push:
+    branches:
+      - phase/1f3-12-clean-machine
+
+permissions:
+  contents: read # checkout and download the build-input pre-release
+
+env:
+  PYARROW_RELEASE_TAG: build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782
+  PYARROW_WHEEL: pyarrow-18.1.0-cp312-cp312-win_amd64.whl
+  NODE_ZIP: node-v22.23.5-win-x64.zip
+  # From https://nodejs.org/dist/v22.23.5/SHASUMS256.txt
+  NODE_ZIP_SHA256: 4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3
+  NEXT_TELEMETRY_DISABLED: "1"
+  SETUP_NAME: DataIntelligenceLab-Setup-1.0.0.exe
+
+jobs:
+  build:
+    name: Build the installer and the verification kit
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12.10 x64 (build tool only)
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12.10"
+          architecture: "x64"
+
+      - name: Set up Node.js 22.23.5 (build tool only, hash-pinned)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Join-Path $env:RUNNER_TEMP $env:NODE_ZIP
+          Invoke-WebRequest "https://nodejs.org/dist/v22.23.5/$env:NODE_ZIP" -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:NODE_ZIP_SHA256) { throw "Node.js zip SHA-256 mismatch: $actual" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\nodejs"
+          $dir = "$env:RUNNER_TEMP\nodejs\node-v22.23.5-win-x64"
+          $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "$dir\node.exe" --version
+          & "$dir\npm.cmd" --version
+
+      - name: Record the VC++ Redistributable on the runner (documented prerequisite >= 14.44)
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+          if (Test-Path $key) { Get-ItemProperty $key | Select-Object Version, Installed, Major, Minor, Bld | Format-List }
+          else { Write-Warning "VC++ 2015-2022 x64 runtime registry key not found" }
+
+      - name: Download the CRT-free PyArrow wheel from the build-input pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh release download $env:PYARROW_RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:PYARROW_WHEEL --dir "$env:RUNNER_TEMP\pyarrow"
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)" }
+
+      - name: Build the verified wheelhouse
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/prepare_wheelhouse.py --pyarrow-wheel "$env:RUNNER_TEMP\pyarrow\$env:PYARROW_WHEEL" --output-dir "$env:RUNNER_TEMP\wheelhouse"
+          if ($LASTEXITCODE -ne 0) { throw "prepare_wheelhouse.py failed ($LASTEXITCODE)" }
+
+      - name: Build the production frontend
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed ($LASTEXITCODE)" }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed ($LASTEXITCODE)" }
+          Get-Content .next\BUILD_ID
+
+      - name: Build the release bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/build_runtime_bundle.py --mode release --wheelhouse "$env:RUNNER_TEMP\wheelhouse" --output-dir "$env:RUNNER_TEMP\bundle" --cache-dir "$env:RUNNER_TEMP\runtime-cache"
+          if ($LASTEXITCODE -ne 0) { throw "build_runtime_bundle.py failed ($LASTEXITCODE)" }
+
+      - name: Re-verify the bundle against its manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/build_runtime_bundle.py --verify "$env:RUNNER_TEMP\bundle"
+          if ($LASTEXITCODE -ne 0) { throw "bundle verification failed ($LASTEXITCODE)" }
+          $m = Get-Content "$env:RUNNER_TEMP\bundle\manifest.json" -Raw | ConvertFrom-Json
+          "files: $($m.file_count)  bytes: $($m.total_bytes)"
+          $m.runtime | Select-Object mode, frontend_build_id, python_excluded_files | Format-List
+          $m.runtime.crt_gate | Format-List
+          $m.runtime.node | Format-List
+
+      - name: Smoke-test the bundle independently
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/smoke_test_bundle.py --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\smoke" --evidence "$env:RUNNER_TEMP\smoke-evidence.json"
+          if ($LASTEXITCODE -ne 0) { throw "bundle smoke test failed ($LASTEXITCODE)" }
+
+      - name: Locate Inno Setup (6.3+ required; enforced by the compile)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup 6 is not installed on this runner image" }
+          # ISCC.exe carries no file version resource (reads 0.0.0.0); record the installed
+          # version from Inno Setup's uninstall entry. The compile step is the real 6.3+ gate:
+          # older compilers reject ArchitecturesAllowed=x64compatible.
+          $keys = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+                  "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1"
+          $ver = ($keys | Where-Object { Test-Path $_ } | ForEach-Object { (Get-ItemProperty $_).DisplayVersion } | Select-Object -First 1)
+          "ISCC: $iscc (Inno Setup $ver)"
+          "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Compile the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & $env:ISCC /Q "/DBundleDir=$env:RUNNER_TEMP\bundle" "/DOutputDir=$env:RUNNER_TEMP\dist" packaging\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+          Get-ChildItem "$env:RUNNER_TEMP\dist" | ForEach-Object { "{0}  {1} bytes  sha256 {2}" -f $_.Name, $_.Length, (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+
+      - name: Parse the PowerShell scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($f in @("packaging\clean-machine\Verify-DataIntelligenceLab.ps1", ".github\scripts\Invoke-AsStandardUser.ps1")) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$null, [ref]$errs)
+            if ($errs) { $errs | ForEach-Object { Write-Host "$f : $($_.Extent.StartLineNumber): $($_.Message)" }; throw "PowerShell parse errors in $f" }
+            "$f parses under PowerShell $($PSVersionTable.PSVersion)"
+          }
+
+      - name: Assemble the verification kit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $kit = "$env:RUNNER_TEMP\kit"
+          New-Item -ItemType Directory -Force -Path $kit | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\dist\$env:SETUP_NAME" $kit
+          Copy-Item packaging\clean-machine\Verify-DataIntelligenceLab.ps1, packaging\clean-machine\README.md, packaging\smoke_test_bundle.py, packaging\build_runtime_bundle.py $kit
+          $hash = (Get-FileHash "$kit\$env:SETUP_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:SETUP_NAME" | Set-Content "$kit\SHA256SUMS" -Encoding ascii
+          Get-ChildItem $kit | ForEach-Object { "{0,-40} {1,12} bytes" -f $_.Name, $_.Length }
+          "SETUP_SHA256: $hash"
+
+      - name: Upload the verification kit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dil-clean-machine-kit
+          path: ${{ runner.temp }}\kit
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload the bundle manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dil-bundle-manifest
+          path: ${{ runner.temp }}\bundle\manifest.json
+          retention-days: 14
+          if-no-files-found: error
+
+  verify:
+    name: Verify on ${{ matrix.os }} (admin and standard user)
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12.10 x64 (test driver only; the app uses its bundled runtime)
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12.10"
+          architecture: "x64"
+
+      - name: Download the verification kit
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: dil-clean-machine-kit
+          path: C:\dil-shared\kit
+
+      - name: Download the bundle manifest
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: dil-bundle-manifest
+          path: C:\dil-shared\bundle
+
+      - name: Record the machine
+        shell: pwsh
+        run: |
+          $cv = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+          "OS: $($cv.ProductName) $($cv.DisplayVersion) build $($cv.CurrentBuild).$($cv.UBR) ($($cv.InstallationType))"
+          $key = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+          if (Test-Path $key) { $v = Get-ItemProperty $key; "VC++ x64 runtime: $($v.Major).$($v.Minor).$($v.Bld)" } else { "VC++ x64 runtime: not registered" }
+
+      - name: Installer lifecycle as administrator
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/test_installer.py --setup "C:\dil-shared\kit\$env:SETUP_NAME" --bundle C:\dil-shared\bundle --work-dir "$env:RUNNER_TEMP\admin-lifecycle" --evidence "$env:RUNNER_TEMP\admin-lifecycle.json"
+          if ($LASTEXITCODE -ne 0) { throw "admin lifecycle failed ($LASTEXITCODE)" }
+
+      - name: Verification kit as a standard user (non-interactive)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Another account's python.exe: the standard user cannot query it, and setup must not block on it.
+          $other = Start-Process python -ArgumentList '-c', '"import time; time.sleep(1800)"' -PassThru -WindowStyle Hidden
+          "admin-owned python.exe running as PID $($other.Id)"
+          @'
+          & 'C:\dil-shared\kit\Verify-DataIntelligenceLab.ps1' -SkipInteractive
+          $code = $LASTEXITCODE
+          Copy-Item "$([Environment]::GetFolderPath('Desktop'))\dil-verification-*.json" 'C:\dil-shared\' -ErrorAction SilentlyContinue
+          exit $code
+          '@ | Set-Content C:\dil-shared\std-kit.ps1 -Encoding UTF8
+          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-kit.ps1 -Name std-kit
+          if ($LASTEXITCODE -ne 0) { throw "kit failed as a standard user ($LASTEXITCODE)" }
+          Stop-Process -Id $other.Id -Force -ErrorAction SilentlyContinue
+          $ev = Get-ChildItem C:\dil-shared\dil-verification-*.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
+          "kit result: $($ev.result), phase $($ev.phase), account $($ev.account.User) elevated=$($ev.account.IsElevated)"
+          if ($ev.result -ne "PASS" -or $ev.phase -ne 2 -or $ev.account.IsElevated) { throw "unexpected kit evidence" }
+
+      - name: Installer lifecycle as a standard user
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Another account's python.exe: the standard user cannot query it, and setup must not block on it.
+          $other = Start-Process python -ArgumentList '-c', '"import time; time.sleep(1800)"' -PassThru -WindowStyle Hidden
+          "admin-owned python.exe running as PID $($other.Id)"
+          Copy-Item -Recurse packaging C:\dil-shared\packaging -Force
+          $py = Join-Path $env:pythonLocation "python.exe"
+          @"
+          & '$py' 'C:\dil-shared\packaging\test_installer.py' --setup 'C:\dil-shared\kit\$env:SETUP_NAME' --bundle 'C:\dil-shared\bundle' --work-dir 'C:\dil-shared\std-lifecycle' --expect-standard-user --evidence 'C:\dil-shared\std-lifecycle.json'
+          exit `$LASTEXITCODE
+          "@ | Set-Content C:\dil-shared\std-lifecycle.ps1 -Encoding UTF8
+          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-lifecycle.ps1 -Name std-lifecycle
+          if ($LASTEXITCODE -ne 0) { throw "lifecycle failed as a standard user ($LASTEXITCODE)" }
+          Stop-Process -Id $other.Id -Force -ErrorAction SilentlyContinue
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: clean-machine-evidence-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}\admin-lifecycle.json
+            C:\dil-shared\*.json
+            C:\dil-shared\*.log
+          retention-days: 14
+          if-no-files-found: warn
+
+  missing-vc-runtime:
+    name: Machine without the VC++ runtime (windows-2025)
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12.10 x64 (ships its own vcruntime140.dll)
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12.10"
+          architecture: "x64"
+
+      - name: Download the verification kit
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: dil-clean-machine-kit
+          path: C:\dil-shared\kit
+
+      - name: Install, remove the VC++ runtime, then launch, reinstall and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/test_missing_vc_runtime.py --setup "C:\dil-shared\kit\$env:SETUP_NAME" --work-dir "$env:RUNNER_TEMP\missing-vc" --evidence "$env:RUNNER_TEMP\missing-vc.json" --i-understand-this-uninstalls-vc-runtime
+          if ($LASTEXITCODE -ne 0) { throw "missing VC++ runtime test failed ($LASTEXITCODE)" }
+
+      - name: Verification kit phase 1 as a standard user (no VC++ runtime)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          @'
+          & 'C:\dil-shared\kit\Verify-DataIntelligenceLab.ps1' -SkipInteractive
+          $code = $LASTEXITCODE
+          Copy-Item "$([Environment]::GetFolderPath('Desktop'))\dil-verification-*.json" 'C:\dil-shared\' -ErrorAction SilentlyContinue
+          exit $code
+          '@ | Set-Content C:\dil-shared\std-kit-phase1.ps1 -Encoding UTF8
+          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-kit-phase1.ps1 -Name std-kit-phase1
+          if ($LASTEXITCODE -ne 0) { throw "kit phase 1 failed as a standard user ($LASTEXITCODE)" }
+          $ev = Get-ChildItem C:\dil-shared\dil-verification-*.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
+          "kit result: $($ev.result), phase $($ev.phase): $($ev.phase1.log)"
+          if ($ev.result -ne "PASS" -or $ev.phase -ne 1) { throw "unexpected kit evidence" }
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: missing-vc-runtime-evidence
+          path: |
+            ${{ runner.temp }}\missing-vc.json
+            C:\dil-shared\*.json
+            C:\dil-shared\*.log
+          retention-days: 14
+          if-no-files-found: warn
