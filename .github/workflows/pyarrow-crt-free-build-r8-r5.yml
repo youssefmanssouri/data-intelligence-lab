@@ -402,7 +402,9 @@ jobs:
           assert rt.num_rows == 3
           assert rt.to_pydict() == {
               "id": [1, 2, 3],
-              "name": ["alpha", None, "gamma"],
+              # PyArrow keeps an empty CSV string cell as "" (ConvertOptions.strings_can_be_null
+              # defaults to False); only the numeric blank becomes null. Official 18.1.0 does the same.
+              "name": ["alpha", "", "gamma"],
               "score": [10.5, 20.25, None],
               "active": [True, False, True],
           }
