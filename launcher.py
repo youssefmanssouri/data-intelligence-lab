@@ -1275,6 +1275,16 @@ class UnifiedLauncher:
         if not frontend_entry.is_file():
             raise LauncherError(f"Frontend entry point missing: {frontend_entry}")
 
+        # An installed copy (or a staged bundle) ships its own Node.js and a manifest.json.
+        # There, a missing node.exe means a damaged installation: never fall back to whatever
+        # node.exe is first on PATH. Only a developer checkout (no manifest) may use PATH.
+        bundled_node = self.repo_root / "node" / ("node.exe" if self.adapter.is_windows() else "node")
+        if (self.repo_root / "manifest.json").is_file() and not bundled_node.is_file():
+            raise LauncherError(
+                f"The bundled Node.js runtime is missing ({bundled_node}). "
+                "The installation is damaged; reinstall Data Intelligence Lab."
+            )
+
         return backend_entry, frontend_entry
 
     def init_job_object(self) -> int:
