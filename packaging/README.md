@@ -15,16 +15,16 @@ Data Intelligence Lab v1.0 packages a completely offline, self-contained desktop
 ├── manifest.current.json            # Cryptographic SHA-256 file manifest of active installation
 ├── manifest.previous.json           # Backup manifest for rollback/cleanup
 ├── node\
-│   └── node.exe                     # Bundled 64-bit Node.js standalone executable
+│   └── node.exe                     # Bundled Node.js 22.23.5 (win-x64), SHA-256 pinned
 ├── runtime\
 │   └── python\                      # Bundled CPython 3.12 64-bit embeddable runtime
 │       ├── python.exe
 │       ├── pythonw.exe
-│       ├── python312._pth           # Configured with 'import site'
+│       ├── python312._pth           # sys.path: stdlib zip, runtime, Lib\site-packages, bundle root
 │       └── Lib\site-packages\       # Vendored production dependencies
 ├── backend\                         # FastAPI / Uvicorn backend service
 ├── core\                            # Analysis & execution engine
-└── frontend\                        # Next.js custom server & proxy
+└── frontend\                        # Built .next output, custom server & proxy, production node_modules
 ```
 
 ---
@@ -60,17 +60,30 @@ The bundle therefore ships no Microsoft CRT: the target machine needs the Micros
 
 ## 4. Building the Standalone Runtime Bundle
 
-The bundling script automates staging the application tree, fetching verified runtimes, and generating `manifest.json`:
+Prerequisites on the build machine: Python 3.12+, Node.js 22 with npm, the wheelhouse from section 3, and a production frontend build:
 
 ```powershell
-python packaging/build_runtime_bundle.py --output-dir "$env:TEMP\dil_bundle" --mode release
+cd frontend; npm ci; npm run build; cd ..
+python packaging/build_runtime_bundle.py --mode release --wheelhouse <WHEELHOUSE_DIR> --output-dir "$env:TEMP\dil_bundle"
+python packaging/build_runtime_bundle.py --verify "$env:TEMP\dil_bundle"
 ```
 
+Release mode fails closed. It:
+- downloads (or reuses from `--cache-dir`) Node.js 22.23.5 `node.exe` and the CPython 3.12.10 embeddable package, each checked against a pinned SHA-256; a local `node\node.exe` is used only if it matches the pin, and nothing is ever replaced by a placeholder;
+- extracts the embeddable package **without** `vcruntime140.dll` and `vcruntime140_1.dll` (see section 7) and writes `python312._pth` so `python -m backend.main` resolves the bundle root and `Lib\site-packages`;
+- checks the wheelhouse against `wheelhouse-manifest.json` and the current lock, then installs it offline (`--no-index --require-hashes`, cp312-win_amd64) into `runtime\python\Lib\site-packages`;
+- stages the frontend's built `.next` output (without build caches and traces), `config`, `scripts`, `next.config.mjs` and `package*.json`, then runs `npm ci --omit=dev --ignore-scripts --os=win32 --cpu=x64` there;
+- runs the CRT gate over every PE image (`.dll`, `.pyd`, `.node`, `.exe`) and writes `manifest.json` (size and SHA-256 of every file, plus runtime versions, the frontend BUILD_ID and the vendored wheel hashes).
+
+`--verify <BUNDLE_DIR>` re-checks an existing bundle independently: every file on disk must be listed in `manifest.json` with a matching size and SHA-256, and nothing unlisted may be present.
+
 ### Options:
-- `--output-dir <DIR>`: Directory outside the repository to stage the bundle.
-- `--mode [development|release]`: In `release` mode, enforces the CRT redistribution gate fail-closed.
-- `--allow-crt-redistribution`: Authorizes packaging Microsoft Visual C++ CRT binaries.
-- `--skip-download`: Uses pre-cached local runtime archives.
+- `--mode [development|release]`: `release` (default) applies every rule above; `development` may stage placeholders for inspection only.
+- `--wheelhouse <DIR>`: Verified wheelhouse from `prepare_wheelhouse.py`; required in release mode.
+- `--output-dir <DIR>`: Directory outside the repository to stage the bundle (replaced if it exists).
+- `--cache-dir <DIR>`: Cache for the downloaded runtimes (re-verified on every use).
+- `--skip-download`: Development mode only; stages placeholder runtimes.
+- `--allow-crt-redistribution` / `--crt-authorization-file`: Not used for Data Intelligence Lab releases; redistribution is not authorized.
 
 ---
 
@@ -108,5 +121,6 @@ Redistributing Microsoft Visual C++ Runtime binaries (`msvcp140.dll`, `vcruntime
 
 Data Intelligence Lab packaging enforces this rule:
 - No vendored wheel bundles a Microsoft CRT file: `prepare_wheelhouse.py` rejects any that does, and PyArrow is the source-built CRT-free wheel (see section 3). Binaries load the system Visual C++ runtime instead.
-- The CPython embeddable package itself ships `vcruntime140.dll` and `vcruntime140_1.dll`; excluding them from the bundle is part of the runtime-bundle milestone (not yet implemented).
+- The CPython embeddable package itself ships `vcruntime140.dll` and `vcruntime140_1.dll`; `build_runtime_bundle.py` never extracts them, records them in `manifest.json` as excluded, and the CRT gate would block them if they reappeared. `python.exe` then loads them from the installed Visual C++ Redistributable.
+- `node.exe` links its C runtime statically, and the frontend's native addons (`@next/swc-win32-x64-msvc`, `@img/sharp-win32-x64`) ship no Microsoft CRT file; they import only the Universal CRT (`api-ms-win-crt-*`), which is part of Windows 10/11.
 - Unvendored CRT DLLs placed in the application root are blocked fail-closed by `build_runtime_bundle.py` in release mode unless `--allow-crt-redistribution` is explicitly provided.

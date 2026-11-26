@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 from typing import Dict, List, Optional, Set, Tuple
@@ -31,9 +32,31 @@ PYTHON_EMBED_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-emb
 # matches the MD5 python.org lists for "Windows embeddable package (64-bit)" on the 3.12.10 page.
 PYTHON_EMBED_SHA256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 
-NODE_EXE_URL = "https://nodejs.org/dist/v20.18.3/win-x64/node.exe"
-# Matches https://nodejs.org/dist/v20.18.3/SHASUMS256.txt ("win-x64/node.exe") and the downloaded file.
-NODE_EXE_SHA256 = "528a9aa64888a2a3ba71c6aea89434dd5ab5cb3caa9f0f31345cf5facf685ab0"
+NODE_VERSION = "22.23.5"
+NODE_EXE_URL = f"https://nodejs.org/dist/v{NODE_VERSION}/win-x64/node.exe"
+# Matches https://nodejs.org/dist/v22.23.5/SHASUMS256.txt ("win-x64/node.exe") and the downloaded file.
+# Node 22 is the major CI tests on and satisfies frontend/package.json "engines" (>=22.14.0);
+# node.exe links its C runtime statically and imports no Microsoft CRT DLL.
+NODE_EXE_SHA256 = "247e9693d316da9857e44990e5e11709f596f18112251b8026ec6eed80bdf38a"
+
+# The embeddable package ships these two Microsoft runtime DLLs. They are never staged:
+# redistribution is not authorized, and the VC++ 2015-2022 Redistributable (x64) is a
+# documented installation prerequisite that provides them.
+PYTHON_EMBED_EXCLUDED = frozenset({"vcruntime140.dll", "vcruntime140_1.dll"})
+
+# The embeddable runtime reads sys.path only from this file (PYTHONPATH is ignored).
+# Paths are relative to runtime/python/: the stdlib zip, the runtime directory, the
+# vendored packages, and the bundle root (so `python -m backend.main` finds `backend`).
+PYTHON_PTH_NAME = "python312._pth"
+PYTHON_PTH_CONTENT = "python312.zip\n.\nLib\\site-packages\n..\\..\nimport site\n"
+
+# Files with PE images the CRT gate inspects. .pyd and .node files are DLLs.
+PE_SUFFIXES = (".dll", ".pyd", ".node", ".exe")
+
+# Build-machine-only parts of the Next.js output that the production server never reads.
+NEXT_EXCLUDED = ("cache", "trace", "trace-build", "diagnostics", "types")
+FRONTEND_FILES = ("next.config.mjs", "package.json", "package-lock.json")
+FRONTEND_DIRS = ("config", "scripts", "public")
 
 CRT_DLL_NAMES = frozenset({
     "msvcp140.dll",
@@ -198,7 +221,7 @@ def enforce_crt_redistribution_gate(
     Enforces recursive inspection and legal redistribution gating for Microsoft CRT binaries.
 
     In release mode:
-    1. Recursively scans EVERY .dll file across the entire bundle_dir hierarchy.
+    1. Recursively scans EVERY PE image (.dll, .pyd, .node, .exe) across the entire bundle_dir hierarchy.
     2. Identifies and classifies direct CRT DLLs, versioned/privately renamed CRT DLLs,
        and non-CRT binaries via PE metadata and string markers.
     3. Fails closed unconditionally if any root-level CRT DLL is detected (loose root CRT
@@ -219,7 +242,7 @@ def enforce_crt_redistribution_gate(
     all_dlls: List[Path] = []
     for root, _, files in os.walk(bundle_dir):
         for f in files:
-            if f.lower().endswith(".dll"):
+            if f.lower().endswith(PE_SUFFIXES):
                 all_dlls.append(Path(root) / f)
 
     classified_crt: List[Tuple[str, Path, Dict[str, object]]] = []
@@ -320,6 +343,123 @@ def enforce_crt_redistribution_gate(
     }
 
 
+class BundleError(RuntimeError):
+    """Raised when the bundle cannot be staged to release standards."""
+
+
+def verify_wheelhouse(wheelhouse: Path, lock_path: Path) -> Dict[str, object]:
+    """
+    Checks a wheelhouse produced by prepare_wheelhouse.py against the current lock:
+    the manifest must name this exact lock, and the directory must hold exactly the
+    manifested wheels with matching SHA-256 hashes.
+    """
+    manifest_path = wheelhouse / "wheelhouse-manifest.json"
+    if not manifest_path.is_file():
+        raise BundleError(f"Wheelhouse manifest missing: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("target") != "cp312-win_amd64":
+        raise BundleError(f"Wheelhouse targets {manifest.get('target')!r}, expected 'cp312-win_amd64'")
+    if manifest.get("lock_sha256") != compute_sha256(lock_path):
+        raise BundleError("Wheelhouse was built from a different requirements-vendor.txt; rebuild it")
+    expected = {w["file"]: w["sha256"] for w in manifest.get("wheels", [])}
+    present = {p.name for p in wheelhouse.iterdir() if p.name != manifest_path.name}
+    if present != set(expected):
+        raise BundleError(
+            f"Wheelhouse contents differ from its manifest: "
+            f"missing {sorted(set(expected) - present)}, unexpected {sorted(present - set(expected))}"
+        )
+    for name, sha in expected.items():
+        if not verify_file_hash(wheelhouse / name, sha):
+            raise BundleError(f"Wheelhouse wheel hash mismatch: {name}")
+    return manifest
+
+
+def install_vendor_packages(wheelhouse: Path, lock_path: Path, site_packages: Path) -> None:
+    """Installs the locked closure offline, hash-checked, for the cp312-win_amd64 target."""
+    site_packages.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable, "-m", "pip", "install",
+        "--no-index", "--find-links", str(wheelhouse),
+        "--require-hashes", "-r", str(lock_path),
+        "--target", str(site_packages),
+        "--only-binary=:all:", "--platform", "win_amd64", "--python-version", "3.12",
+        "--implementation", "cp", "--abi", "cp312",
+        "--no-compile", "--no-warn-script-location", "--disable-pip-version-check",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise BundleError(f"Vendored package install failed:\n{result.stdout}{result.stderr}")
+    # Console-script launchers embed the build machine's interpreter path; the app never uses them.
+    for scripts_dir in ("bin", "Scripts"):
+        shutil.rmtree(site_packages / scripts_dir, ignore_errors=True)
+
+
+def stage_python_runtime(python_dest_dir: Path, embed_zip: Path) -> List[str]:
+    """Extracts the embeddable runtime without its Microsoft CRT DLLs and writes the ._pth."""
+    excluded: List[str] = []
+    with zipfile.ZipFile(embed_zip, "r") as z:
+        for member in z.infolist():
+            name = member.filename
+            if name.endswith("/"):
+                continue
+            if "/" in name or "\\" in name or name.startswith(".."):
+                raise BundleError(f"Unexpected nested path in embeddable package: {name}")
+            if name.lower() in PYTHON_EMBED_EXCLUDED:
+                excluded.append(name)
+                continue
+            z.extract(member, python_dest_dir)
+    if sorted(n.lower() for n in excluded) != sorted(PYTHON_EMBED_EXCLUDED):
+        raise BundleError(f"Embeddable package layout changed; excluded only {excluded}")
+    if not (python_dest_dir / PYTHON_PTH_NAME).is_file():
+        raise BundleError(f"{PYTHON_PTH_NAME} missing from the embeddable package")
+    (python_dest_dir / PYTHON_PTH_NAME).write_text(PYTHON_PTH_CONTENT, encoding="utf-8")
+    return excluded
+
+
+def stage_frontend(fe_src: Path, fe_dest: Path, npm_command: List[str]) -> str:
+    """
+    Stages the production frontend: the built .next output (without build-machine
+    caches), the custom server and its configuration, and production node_modules
+    installed from package-lock.json for win32-x64 with install scripts disabled.
+    Returns the Next.js BUILD_ID.
+    """
+    build_id_file = fe_src / ".next" / "BUILD_ID"
+    if not build_id_file.is_file():
+        raise BundleError(f"Frontend is not built ({build_id_file} missing); run `npm ci && npm run build` first")
+    build_id = build_id_file.read_text(encoding="utf-8").strip()
+
+    fe_dest.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(fe_src / ".next", fe_dest / ".next", ignore=shutil.ignore_patterns(*NEXT_EXCLUDED))
+    for name in FRONTEND_FILES:
+        if not (fe_src / name).is_file():
+            raise BundleError(f"Frontend file missing: {fe_src / name}")
+        shutil.copy2(fe_src / name, fe_dest / name)
+    for name in FRONTEND_DIRS:
+        if (fe_src / name).is_dir():
+            shutil.copytree(fe_src / name, fe_dest / name)
+    if not (fe_dest / "scripts" / "server.mjs").is_file():
+        raise BundleError("Frontend entry point scripts/server.mjs missing")
+
+    cmd = [*npm_command, "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund",
+           "--os=win32", "--cpu=x64"]
+    result = subprocess.run(cmd, cwd=fe_dest, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise BundleError(f"Production npm install failed:\n{result.stdout}{result.stderr}")
+    # Command shims and symlinks for CLI tools; the server imports packages directly.
+    shutil.rmtree(fe_dest / "node_modules" / ".bin", ignore_errors=True)
+    for required in ("next", "react", "react-dom", "lossless-json"):
+        if not (fe_dest / "node_modules" / required / "package.json").is_file():
+            raise BundleError(f"Production dependency missing after npm ci: {required}")
+    return build_id
+
+
+def _default_npm_command() -> List[str]:
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if not npm:
+        raise BundleError("npm is required to stage the frontend's production dependencies")
+    return [npm]
+
+
 def stage_bundle(
     repo_root: Path,
     output_dir: Path,
@@ -328,8 +468,22 @@ def stage_bundle(
     crt_authorization_file: Optional[Path] = None,
     cache_dir: Optional[Path] = None,
     skip_download: bool = False,
+    wheelhouse: Optional[Path] = None,
+    npm_command: Optional[List[str]] = None,
 ) -> Path:
-    """Stages the complete standalone runtime bundle into output_dir."""
+    """
+    Stages the complete standalone runtime bundle into output_dir.
+
+    Release mode fails closed: every runtime is hash-verified, the vendored packages
+    and the built frontend are required, and nothing is ever replaced by a placeholder.
+    Development mode may stage placeholders so the layout can be inspected offline.
+    """
+    release = mode == "release"
+    if release and skip_download:
+        raise BundleError("--skip-download is not allowed in release mode")
+    if release and wheelhouse is None:
+        raise BundleError("--wheelhouse is required in release mode")
+
     output_dir = output_dir.resolve()
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -337,90 +491,83 @@ def stage_bundle(
 
     cache = cache_dir or (Path(tempfile.gettempdir()) / "dil_packaging_cache")
     cache.mkdir(parents=True, exist_ok=True)
+    lock_path = repo_root / "packaging" / "requirements-vendor.txt"
+    runtime_info: Dict[str, object] = {"mode": mode}
 
-    # 1. Copy application components
+    # 1. Application components
     print(f"Staging application files into {output_dir} ...")
     for src_dir in ("backend", "core"):
         src_path = repo_root / src_dir
-        if src_path.is_dir():
-            shutil.copytree(src_path, output_dir / src_dir, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-
-    # Copy launcher
-    launcher_src = repo_root / "launcher.py"
-    if launcher_src.is_file():
-        shutil.copy2(launcher_src, output_dir / "launcher.py")
-
-    # Copy frontend scripts and configuration
-    fe_src = repo_root / "frontend"
-    fe_dest = output_dir / "frontend"
-    fe_dest.mkdir(parents=True, exist_ok=True)
-    for sub in ("config", "scripts"):
-        sub_src = fe_src / sub
-        if sub_src.is_dir():
-            shutil.copytree(sub_src, fe_dest / sub)
-
-    # Copy package.json and LICENSE
-    for f_name in ("package.json", "LICENSE"):
+        if not src_path.is_dir():
+            raise BundleError(f"Application package missing: {src_path}")
+        shutil.copytree(src_path, output_dir / src_dir, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    for f_name in ("launcher.py", "LICENSE"):
         f_path = repo_root / f_name
         if f_path.is_file():
             shutil.copy2(f_path, output_dir / f_name)
+        elif f_name == "launcher.py":
+            raise BundleError(f"Launcher missing: {f_path}")
 
-    # 2. Setup Node.js standalone executable
-    node_dest_dir = output_dir / "node"
-    node_dest_dir.mkdir(parents=True, exist_ok=True)
-    local_node = repo_root / "node" / "node.exe"
-    if local_node.is_file():
-        shutil.copy2(local_node, node_dest_dir / "node.exe")
-    elif not skip_download:
-        cached_node = cache / "node.exe"
-        try:
-            download_with_hash_check(NODE_EXE_URL, cached_node, NODE_EXE_SHA256)
-            shutil.copy2(cached_node, node_dest_dir / "node.exe")
-        except Exception as exc:
-            print(f"[WARN] Could not download standalone node.exe ({exc}); using mock/placeholder if dev mode")
-            if mode != "release":
-                (node_dest_dir / "node.exe").write_text("# mock node", encoding="utf-8")
-            else:
-                raise
+    # 2. Frontend
+    fe_src = repo_root / "frontend"
+    fe_dest = output_dir / "frontend"
+    if release or (fe_src / ".next" / "BUILD_ID").is_file():
+        runtime_info["frontend_build_id"] = stage_frontend(fe_src, fe_dest, npm_command or _default_npm_command())
     else:
-        # If skip download or offline, look for system node or placeholder
-        sys_node = shutil.which("node")
-        if sys_node:
-            shutil.copy2(sys_node, node_dest_dir / "node.exe")
-        else:
-            (node_dest_dir / "node.exe").write_text("# mock node", encoding="utf-8")
+        for sub in ("config", "scripts"):
+            if (fe_src / sub).is_dir():
+                shutil.copytree(fe_src / sub, fe_dest / sub)
 
-    # 3. Setup Python embeddable runtime
+    # 3. Node.js standalone executable (hash-pinned)
+    node_dest = output_dir / "node" / "node.exe"
+    node_dest.parent.mkdir(parents=True, exist_ok=True)
+    local_node = repo_root / "node" / "node.exe"
+    if local_node.is_file() and verify_file_hash(local_node, NODE_EXE_SHA256):
+        shutil.copy2(local_node, node_dest)
+    elif local_node.is_file() and release:
+        raise BundleError(f"{local_node} does not match the pinned Node.js {NODE_VERSION} SHA-256")
+    elif not skip_download:
+        cached_node = cache / f"node-v{NODE_VERSION}-win-x64.exe"
+        download_with_hash_check(NODE_EXE_URL, cached_node, NODE_EXE_SHA256)
+        shutil.copy2(cached_node, node_dest)
+    else:
+        node_dest.write_text("# development placeholder: not a Node.js runtime", encoding="utf-8")
+    if release and not verify_file_hash(node_dest, NODE_EXE_SHA256):
+        raise BundleError("Staged node.exe does not match the pinned SHA-256")
+    runtime_info["node"] = {"version": NODE_VERSION, "sha256": NODE_EXE_SHA256}
+
+    # 4. Python embeddable runtime (hash-pinned, without Microsoft CRT DLLs)
     python_dest_dir = output_dir / "runtime" / "python"
     python_dest_dir.mkdir(parents=True, exist_ok=True)
     if not skip_download:
         cached_py = cache / "python-3.12.10-embed-amd64.zip"
-        try:
-            download_with_hash_check(PYTHON_EMBED_URL, cached_py, PYTHON_EMBED_SHA256)
-            with zipfile.ZipFile(cached_py, "r") as z:
-                z.extractall(python_dest_dir)
-            # Enable site module in python312._pth
-            pth_file = python_dest_dir / "python312._pth"
-            if pth_file.is_file():
-                pth_content = pth_file.read_text(encoding="utf-8")
-                pth_content = pth_content.replace("#import site", "import site")
-                pth_file.write_text(pth_content, encoding="utf-8")
-        except Exception as exc:
-            print(f"[WARN] Could not download Python embeddable zip ({exc}); staging minimal runtime")
-            (python_dest_dir / "python.exe").write_text("# mock python", encoding="utf-8")
+        download_with_hash_check(PYTHON_EMBED_URL, cached_py, PYTHON_EMBED_SHA256)
+        runtime_info["python_excluded_files"] = stage_python_runtime(python_dest_dir, cached_py)
     else:
-        (python_dest_dir / "python.exe").write_text("# mock python", encoding="utf-8")
+        (python_dest_dir / "python.exe").write_text("# development placeholder: not a Python runtime", encoding="utf-8")
+    runtime_info["python"] = {"version": "3.12.10", "embed_sha256": PYTHON_EMBED_SHA256}
 
-    # 4. Enforce CRT Redistribution Gate
-    enforce_crt_redistribution_gate(
+    # 5. Vendored backend dependencies
+    if wheelhouse is not None:
+        wh_manifest = verify_wheelhouse(wheelhouse, lock_path)
+        install_vendor_packages(wheelhouse, lock_path, python_dest_dir / "Lib" / "site-packages")
+        runtime_info["vendor"] = {
+            "lock_sha256": wh_manifest["lock_sha256"],
+            "wheels": [{"file": w["file"], "sha256": w["sha256"]} for w in wh_manifest["wheels"]],
+        }
+
+    # 6. Microsoft CRT redistribution gate
+    gate = enforce_crt_redistribution_gate(
         output_dir,
         mode=mode,
         allow_crt_redistribution=allow_crt_redistribution,
         crt_authorization_file=crt_authorization_file,
     )
+    runtime_info["crt_gate"] = gate
 
-    # 5. Build and write manifest.json
+    # 7. Manifest of every staged file
     manifest = build_manifest(output_dir)
+    manifest["runtime"] = runtime_info
     manifest_path = output_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
@@ -428,21 +575,50 @@ def stage_bundle(
     return output_dir
 
 
+def verify_bundle(bundle_dir: Path) -> Dict[str, object]:
+    """
+    Re-verifies a staged bundle independently of how it was built: every file on disk
+    is in manifest.json with a matching size and SHA-256, and nothing else is present.
+    """
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    listed = {e["path"]: e for e in manifest["files"]}
+    on_disk = {
+        (Path(root) / f).relative_to(bundle_dir).as_posix()
+        for root, _, files in os.walk(bundle_dir)
+        for f in files
+    } - {"manifest.json"}
+    if on_disk != set(listed):
+        raise BundleError(
+            f"Bundle differs from manifest: unlisted {sorted(on_disk - set(listed))[:10]}, "
+            f"missing {sorted(set(listed) - on_disk)[:10]}"
+        )
+    for rel, entry in listed.items():
+        path = bundle_dir / rel
+        if path.stat().st_size != entry["size"] or compute_sha256(path) != entry["sha256"]:
+            raise BundleError(f"Bundle file does not match manifest: {rel}")
+    return {"file_count": len(listed), "total_bytes": manifest["total_bytes"]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Data Intelligence Lab Runtime Bundle Builder")
     parser.add_argument("--repo-root", default=None, help="Path to repository root")
     parser.add_argument("--output-dir", default=None, help="Destination directory for bundle")
     parser.add_argument("--mode", default="release", choices=["development", "release"])
+    parser.add_argument("--wheelhouse", default=None, help="Verified wheelhouse from prepare_wheelhouse.py (required in release mode)")
     parser.add_argument("--allow-crt-redistribution", action="store_true", help="Authorize CRT redistribution")
     parser.add_argument("--crt-authorization-file", default=None, help="Path to JSON file with CRT redistribution approval")
-    parser.add_argument("--skip-download", action="store_true", help="Skip remote runtime downloads")
+    parser.add_argument("--skip-download", action="store_true", help="Development only: stage placeholders instead of downloading runtimes")
     parser.add_argument("--cache-dir", default=None, help="Directory for cached runtime archives")
+    parser.add_argument("--verify", default=None, metavar="BUNDLE_DIR", help="Only re-verify an existing bundle against its manifest")
     args = parser.parse_args()
 
-    repo_root = Path(args.repo_root or Path(__file__).resolve().parent.parent).resolve()
-    out_dir = Path(args.output_dir) if args.output_dir else (Path(tempfile.gettempdir()) / "dil_bundle_output")
-
     try:
+        if args.verify:
+            result = verify_bundle(Path(args.verify).resolve())
+            print(f"Bundle verified: {result['file_count']} files match manifest.json.")
+            return 0
+        repo_root = Path(args.repo_root or Path(__file__).resolve().parent.parent).resolve()
+        out_dir = Path(args.output_dir) if args.output_dir else (Path(tempfile.gettempdir()) / "dil_bundle_output")
         stage_bundle(
             repo_root=repo_root,
             output_dir=out_dir,
@@ -451,6 +627,7 @@ def main() -> int:
             crt_authorization_file=Path(args.crt_authorization_file) if args.crt_authorization_file else None,
             cache_dir=Path(args.cache_dir) if args.cache_dir else None,
             skip_download=args.skip_download,
+            wheelhouse=Path(args.wheelhouse).resolve() if args.wheelhouse else None,
         )
         return 0
     except Exception as exc:
