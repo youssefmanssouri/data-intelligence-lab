@@ -55,13 +55,16 @@ def start_menu_dir() -> Path:
 
 
 def shortcut(path: Path) -> Dict[str, str]:
+    # -Command does not bind trailing arguments to $args; pass the path via the environment.
     script = (
-        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($args[0]); "
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:DIL_LNK); "
         "@{TargetPath=$s.TargetPath; Arguments=$s.Arguments; WorkingDirectory=$s.WorkingDirectory} | ConvertTo-Json"
     )
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", script, str(path)],
-                         capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+    result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                            capture_output=True, text=True, env={**os.environ, "DIL_LNK": str(path)})
+    if result.returncode != 0:
+        raise SmokeFailure(f"Reading shortcut {path} failed: {result.stderr.strip()}")
+    return json.loads(result.stdout)
 
 
 def uninstall_entry() -> Optional[Dict[str, str]]:
