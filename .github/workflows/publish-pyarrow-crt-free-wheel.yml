@@ -1,0 +1,91 @@
+name: Publish verified PyArrow 18.1.0 CRT-free wheel (R8-R5-CI)
+
+# Publishes the accepted R8-R5-CI build output (run 45765026782) as a GitHub
+# pre-release so it outlives the 7-day artifact retention. It is a build input
+# for the packaging pipeline, not an application release.
+#
+# Runs only on pushes to this dedicated branch. It re-verifies the artifact
+# against the evidence accepted on 2026-11-26 and publishes nothing on mismatch.
+
+on:
+  push:
+    branches:
+      - release/pyarrow-18.1.0-crt-free-r8r5
+
+permissions:
+  contents: write # create the tag and pre-release
+  actions: read # download the artifact from the accepted run
+
+env:
+  SOURCE_RUN_ID: "45765026782"
+  ARTIFACT_NAME: pyarrow-18.1.0-cp312-win_amd64-crt-free-45765026782
+  WHEEL_NAME: pyarrow-18.1.0-cp312-cp312-win_amd64.whl
+  WHEEL_SHA256: 00d2f53ae4e4e0edae7b73776378ae33d21704fcfbc22fe245538be0202a7840
+  RELEASE_TAG: build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782
+
+jobs:
+  publish:
+    name: Verify and publish accepted wheel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download accepted artifact from run 45765026782
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: artifact
+
+      - name: Re-verify artifact against accepted evidence
+        working-directory: artifact
+        run: |
+          set -euo pipefail
+          ls -l
+          actual="$(sha256sum "$WHEEL_NAME" | cut -c1-64)"
+          echo "wheel sha256: $actual"
+          if [ "$actual" != "$WHEEL_SHA256" ]; then
+            echo "::error::Wheel SHA-256 $actual does not match accepted $WHEEL_SHA256"; exit 1
+          fi
+          # SHA256SUMS.txt is written by PowerShell (CRLF, possibly a UTF-8 BOM).
+          tr -d '\r' < SHA256SUMS.txt | sed '1s/^\xEF\xBB\xBF//' > SHA256SUMS.unix
+          sha256sum -c SHA256SUMS.unix
+          listed="$(awk '{print $2}' SHA256SUMS.unix | sort)"
+          present="$(ls -1 | grep -vx -e SHA256SUMS.txt -e SHA256SUMS.unix | sort)"
+          if [ "$listed" != "$present" ]; then
+            echo "::error::SHA256SUMS.txt does not list exactly the artifact files"; exit 1
+          fi
+          grep -qx "FUNCTIONAL_TEST: PASS" <(tr -d '\r' < functional-test.log)
+          rm SHA256SUMS.unix
+          echo "Artifact matches the accepted evidence."
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite it."; exit 1
+          fi
+          cat > notes.md <<EOF
+          **Build input for the Data Intelligence Lab packaging pipeline, not an application release.**
+
+          PyArrow 18.1.0 for CPython 3.12 on Windows x64, built from PGP-verified Apache Arrow source
+          with MSVC 19.44 (/MD) by the R8-R5-CI workflow. It bundles no Microsoft CRT files and requires
+          the Microsoft Visual C++ 2015-2022 Redistributable (x64), 14.44 or later, on the target machine.
+
+          - Source run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID
+          - Source commit: 01fba2599f64f125185f4e6499506b2b9ad80221
+          - Wheel: $WHEEL_NAME
+          - Wheel SHA-256: $WHEEL_SHA256
+
+          All build evidence (source authentication, toolchain, logs, PE/CRT inventory, functional test,
+          verification report, SHA256SUMS) is attached and was re-verified before publishing.
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release create "$RELEASE_TAG" artifact/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Build input: PyArrow 18.1.0 CRT-free wheel (R8-R5-CI run $SOURCE_RUN_ID)" \
+            --notes-file notes.md
