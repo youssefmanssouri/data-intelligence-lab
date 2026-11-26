@@ -11,10 +11,12 @@ Constructs a self-contained, offline-deployable runtime bundle containing:
 from __future__ import annotations
 
 import argparse
+import compileall
 import hashlib
 import json
 import os
 from pathlib import Path
+import py_compile
 import shutil
 import subprocess
 import sys
@@ -453,6 +455,28 @@ def stage_frontend(fe_src: Path, fe_dest: Path, npm_command: List[str]) -> str:
     return build_id
 
 
+def precompile_bytecode(bundle_dir: Path, roots: List[Path]) -> int:
+    """
+    Compiles every .py file under ``roots`` to CPython 3.12 bytecode with
+    unchecked-hash invalidation, so the installed application never writes
+    __pycache__ into its install directory and file timestamps do not matter.
+    Recorded source paths are made relative to the bundle (no build-machine paths).
+    """
+    if sys.version_info[:2] != (3, 12):
+        raise BundleError(
+            f"Bytecode must be compiled by CPython 3.12 to match the bundled runtime "
+            f"(build interpreter is {sys.version.split()[0]})"
+        )
+    for root in roots:
+        ok = compileall.compile_dir(
+            str(root), quiet=1, stripdir=str(bundle_dir), workers=1,
+            invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+        )
+        if not ok:
+            raise BundleError(f"Bytecode compilation failed under {root}")
+    return sum(1 for root in roots for _ in root.rglob("*.cpython-312.pyc"))
+
+
 def _default_npm_command() -> List[str]:
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if not npm:
@@ -556,7 +580,15 @@ def stage_bundle(
             "wheels": [{"file": w["file"], "sha256": w["sha256"]} for w in wh_manifest["wheels"]],
         }
 
-    # 6. Microsoft CRT redistribution gate
+    # 6. Precompiled bytecode for the application and vendored packages
+    if release:
+        compile_roots = [output_dir / "backend", output_dir / "core"]
+        site_packages = python_dest_dir / "Lib" / "site-packages"
+        if site_packages.is_dir():
+            compile_roots.append(site_packages)
+        runtime_info["bytecode_files"] = precompile_bytecode(output_dir, compile_roots)
+
+    # 7. Microsoft CRT redistribution gate
     gate = enforce_crt_redistribution_gate(
         output_dir,
         mode=mode,
@@ -565,7 +597,7 @@ def stage_bundle(
     )
     runtime_info["crt_gate"] = gate
 
-    # 7. Manifest of every staged file
+    # 8. Manifest of every staged file
     manifest = build_manifest(output_dir)
     manifest["runtime"] = runtime_info
     manifest_path = output_dir / "manifest.json"
@@ -631,7 +663,7 @@ def main() -> int:
         )
         return 0
     except Exception as exc:
-        print(f"[FATAL] Bundle creation failed: {exc}", file=sys.stderr)
+        print(f"[FATAL] {'Bundle verification' if args.verify else 'Bundle creation'} failed: {exc}", file=sys.stderr)
         return 1
 
 

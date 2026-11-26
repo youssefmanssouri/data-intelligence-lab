@@ -307,9 +307,17 @@ def release_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     monkeypatch.setattr(b, "download_with_hash_check", fake_download)
     monkeypatch.setattr(b, "install_vendor_packages", fake_install)
+    compiled = {}
+
+    def fake_precompile(bundle_dir: Path, roots: list[Path]) -> int:
+        compiled["roots"] = [r.relative_to(bundle_dir).as_posix() for r in roots]
+        return 0
+
+    monkeypatch.setattr(b, "precompile_bytecode", fake_precompile)
     out = b.stage_bundle(repo, tmp_path / "bundle", mode="release", wheelhouse=_wheelhouse(tmp_path, lock),
                          npm_command=_fake_npm(tmp_path), cache_dir=tmp_path / "cache")
     assert installed["args"][1] == lock
+    assert compiled["roots"] == ["backend", "core", "runtime/python/Lib/site-packages"]
     return out
 
 
@@ -354,3 +362,31 @@ def test_development_mode_offline_still_stages_layout(tmp_path: Path) -> None:
     out = b.stage_bundle(repo, tmp_path / "dev", mode="development", skip_download=True)
     assert (out / "frontend" / "scripts" / "server.mjs").is_file()
     assert "placeholder" in (out / "node" / "node.exe").read_text(encoding="utf-8")
+
+
+# --- Precompiled bytecode -----------------------------------------------------------
+
+def test_precompile_requires_cpython_312(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(b.sys, "version_info", (3, 13, 0, "final", 0))
+    with pytest.raises(b.BundleError, match="CPython 3.12"):
+        b.precompile_bytecode(tmp_path, [tmp_path])
+
+
+@pytest.mark.skipif(sys.version_info[:2] != (3, 12), reason="bundle bytecode is compiled by CPython 3.12")
+def test_precompile_writes_unchecked_hash_pyc_without_build_paths(tmp_path: Path) -> None:
+    pkg = tmp_path / "backend"
+    pkg.mkdir()
+    (pkg / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+    assert b.precompile_bytecode(tmp_path, [pkg]) == 1
+    pyc = pkg / "__pycache__" / "mod.cpython-312.pyc"
+    data = pyc.read_bytes()
+    flags = int.from_bytes(data[4:8], "little")
+    assert flags == 0b01, "unchecked-hash pyc (hash-based, check_source off)"
+    assert str(tmp_path).encode() not in data, "build-machine path must not be recorded"
+
+
+@pytest.mark.skipif(sys.version_info[:2] != (3, 12), reason="bundle bytecode is compiled by CPython 3.12")
+def test_precompile_fails_closed_on_syntax_error(tmp_path: Path) -> None:
+    (tmp_path / "bad.py").write_text("def broken(:\n", encoding="utf-8")
+    with pytest.raises(b.BundleError, match="compilation failed"):
+        b.precompile_bytecode(tmp_path, [tmp_path])
