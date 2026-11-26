@@ -2418,3 +2418,27 @@ def test_installed_copy_with_bundled_node_passes(mock_app_tree: Path) -> None:
 def test_developer_checkout_may_use_node_on_path(mock_app_tree: Path) -> None:
     assert not (mock_app_tree / "manifest.json").exists()
     UnifiedLauncher(repo_root=mock_app_tree, adapter=MockWin32Adapter()).validate_paths()
+
+
+def test_child_exit_after_stop_request_is_not_an_error(mock_app_tree: Path) -> None:
+    """Ctrl+C stops the children too: their exit during a requested stop must return 0."""
+    adapter = MockWin32Adapter()
+    launcher = UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter)
+    calls = {"n": 0}
+
+    def supervise_once() -> Optional[str]:
+        calls["n"] += 1
+        launcher._shutdown_requested = True  # the signal arrives while a child is exiting
+        return "Backend process (PID 1) exited unexpectedly with code 3221225786"
+
+    launcher.supervise_once = supervise_once  # type: ignore[method-assign]
+    launcher.shutdown = lambda timeout_s=5.0: []  # type: ignore[method-assign]
+    assert launcher.run_supervision_loop(poll_interval_s=0.01) == 0
+    assert calls["n"] == 1
+
+
+def test_child_exit_without_stop_request_is_an_error(mock_app_tree: Path) -> None:
+    launcher = UnifiedLauncher(repo_root=mock_app_tree, adapter=MockWin32Adapter())
+    launcher.supervise_once = lambda: "Frontend process (PID 2) exited unexpectedly with code 1"  # type: ignore[method-assign]
+    launcher.shutdown = lambda timeout_s=5.0: []  # type: ignore[method-assign]
+    assert launcher.run_supervision_loop(poll_interval_s=0.01) == 1

@@ -1568,6 +1568,11 @@ class UnifiedLauncher:
             while not self._shutdown_requested:
                 err = self.supervise_once()
                 if err:
+                    # Ctrl+C reaches every process in the console at once: a child that exits
+                    # because the user asked to stop is not a failure.
+                    time.sleep(min(poll_interval_s, 0.2))
+                    if self._shutdown_requested:
+                        break
                     print(f"[ERROR] {err}")
                     return 1
                 time.sleep(poll_interval_s)
@@ -1723,7 +1728,11 @@ def main() -> int:
         print(f"Data Intelligence Lab running:")
         print(f"  Backend:  http://127.0.0.1:{b_port}")
         print(f"  Frontend: http://127.0.0.1:{f_port}")
-        return launcher.run_supervision_loop()
+        print("Close this window or press Ctrl+C to stop Data Intelligence Lab.", flush=True)
+        code = launcher.run_supervision_loop()
+        if code == 0:
+            print("Data Intelligence Lab stopped.", flush=True)
+        return code
     except Exception as exc:
         print(f"[FATAL] Launcher failed: {exc}", file=sys.stderr)
         return 1
