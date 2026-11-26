@@ -78,6 +78,8 @@ class MockWin32Adapter(IWin32Adapter):
             major=10, minor=0, build=19045, product_type=VER_NT_WORKSTATION
         )
         self.fail_check_version = False
+        self.vc_runtime_version: Optional[Tuple[int, int, int]] = (14, 44, 35211)
+        self.fail_vc_runtime_query = False
         self.next_handle_id = 100
 
         self.created_job_handles: Set[int] = set()
@@ -123,6 +125,11 @@ class MockWin32Adapter(IWin32Adapter):
         if self.fail_check_version:
             raise Win32APIError("RtlGetVersion failed with NTSTATUS -1073741823")
         return self.version_info
+
+    def query_vc_runtime_version(self) -> Optional[Tuple[int, int, int]]:
+        if self.fail_vc_runtime_query:
+            raise OSError("registry access denied")
+        return self.vc_runtime_version
 
     def create_job_object(self) -> int:
         if self.fail_create_job:
@@ -2324,3 +2331,61 @@ def test_shutdown_emergency_fallback_on_timeout(tmp_path: Path) -> None:
 
 
 
+
+
+# =====================================================================
+# Microsoft Visual C++ Redistributable prerequisite (Milestone C)
+# =====================================================================
+
+@pytest.mark.parametrize("version", [(14, 44, 35211), (14, 50, 1), (15, 0, 0)])
+def test_vc_runtime_check_accepts_supported_versions(mock_app_tree: Path, version: Tuple[int, int, int]) -> None:
+    adapter = MockWin32Adapter()
+    adapter.vc_runtime_version = version
+    assert UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter).validate_vc_runtime() == version
+
+
+@pytest.mark.parametrize("version, fragment", [
+    (None, "which is not installed"),
+    ((14, 43, 34808), "installed: 14.43.34808"),
+    ((14, 0, 24215), "installed: 14.0.24215"),
+])
+def test_vc_runtime_check_rejects_missing_or_old_runtime(
+    mock_app_tree: Path, version: Optional[Tuple[int, int, int]], fragment: str
+) -> None:
+    adapter = MockWin32Adapter()
+    adapter.vc_runtime_version = version
+    launcher = UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter)
+    with pytest.raises(PlatformCompatibilityError) as excinfo:
+        launcher.validate_vc_runtime()
+    message = str(excinfo.value)
+    assert fragment in message
+    assert "14.44 or later" in message
+    assert "https://aka.ms/vs/17/release/vc_redist.x64.exe" in message
+
+
+def test_vc_runtime_query_failure_fails_closed(mock_app_tree: Path) -> None:
+    adapter = MockWin32Adapter()
+    adapter.fail_vc_runtime_query = True
+    with pytest.raises(PlatformCompatibilityError, match="Could not determine"):
+        UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter).validate_vc_runtime()
+
+
+def test_startup_stops_before_any_process_when_vc_runtime_is_missing(mock_app_tree: Path) -> None:
+    adapter = MockWin32Adapter()
+    adapter.vc_runtime_version = None
+    launcher = UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter)
+    with pytest.raises(PlatformCompatibilityError):
+        launcher.startup()
+    assert adapter.spawn_history == []
+    assert adapter.created_job_handles == set()
+
+
+def test_interface_requires_vc_runtime_query() -> None:
+    with pytest.raises(NotImplementedError):
+        IWin32Adapter().query_vc_runtime_version()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows registry")
+def test_real_adapter_reads_vc_runtime_registration() -> None:
+    version = Win32Adapter().query_vc_runtime_version()
+    assert version is None or (len(version) == 3 and all(isinstance(v, int) for v in version))
