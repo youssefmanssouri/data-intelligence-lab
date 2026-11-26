@@ -2389,3 +2389,32 @@ def test_interface_requires_vc_runtime_query() -> None:
 def test_real_adapter_reads_vc_runtime_registration() -> None:
     version = Win32Adapter().query_vc_runtime_version()
     assert version is None or (len(version) == 3 and all(isinstance(v, int) for v in version))
+
+
+# =====================================================================
+# Installed copies never fall back to node.exe on PATH (Milestone E)
+# =====================================================================
+
+def test_installed_copy_without_bundled_node_fails_closed(mock_app_tree: Path) -> None:
+    (mock_app_tree / "manifest.json").write_text("{}", encoding="utf-8")
+    adapter = MockWin32Adapter()
+    launcher = UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter)
+    with pytest.raises(LauncherError, match="bundled Node.js runtime is missing"):
+        launcher.validate_paths()
+    with pytest.raises(LauncherError):
+        launcher.startup()
+    assert adapter.spawn_history == [], "nothing may start from a damaged installation"
+
+
+def test_installed_copy_with_bundled_node_passes(mock_app_tree: Path) -> None:
+    (mock_app_tree / "manifest.json").write_text("{}", encoding="utf-8")
+    adapter = MockWin32Adapter()
+    node_dir = mock_app_tree / "node"
+    node_dir.mkdir(exist_ok=True)
+    (node_dir / ("node.exe" if adapter.is_windows() else "node")).write_text("# node", encoding="utf-8")
+    UnifiedLauncher(repo_root=mock_app_tree, adapter=adapter).validate_paths()
+
+
+def test_developer_checkout_may_use_node_on_path(mock_app_tree: Path) -> None:
+    assert not (mock_app_tree / "manifest.json").exists()
+    UnifiedLauncher(repo_root=mock_app_tree, adapter=MockWin32Adapter()).validate_paths()
