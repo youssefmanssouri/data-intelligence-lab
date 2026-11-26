@@ -371,6 +371,7 @@ def test_win32_adapter_signatures_and_prototypes() -> None:
         )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows platform")
 def test_win32_structure_sizes_and_alignments() -> None:
     """F-01: Verifies that 64-bit Windows ctypes struct sizes match the official Windows SDK."""
     if ctypes.sizeof(ctypes.c_void_p) == 8:
@@ -1883,6 +1884,7 @@ def test_check_version_rtl_get_version_success(monkeypatch: pytest.MonkeyPatch) 
     assert info.is_workstation is True
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows platform")
 def test_check_version_rtl_get_version_failure_fallback_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """13. check_version falls back to sys.getwindowsversion() when RtlGetVersion fails."""
     adapter = Win32Adapter()
@@ -1905,6 +1907,7 @@ def test_check_version_rtl_get_version_failure_fallback_success(monkeypatch: pyt
     assert info.is_server is True
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows platform")
 def test_check_version_fallback_missing_product_type_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """14. check_version rejects fallback without product_type fail-closed."""
     adapter = Win32Adapter()
@@ -1923,6 +1926,7 @@ def test_check_version_fallback_missing_product_type_rejected(monkeypatch: pytes
         adapter.check_version()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows platform")
 def test_check_version_query_exceptions_surfaced(monkeypatch: pytest.MonkeyPatch) -> None:
     """15. check_version surfaces version query exceptions."""
     adapter = Win32Adapter()
@@ -2076,6 +2080,7 @@ def test_validate_platform_valid_domain_controller_accepted_and_bounded(mock_app
 
 # Finding B: Fake Win32 Handle Integrity
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows platform")
 def test_fake_kernel32_close_handle_rejects_zero_and_invalid_handles() -> None:
     """23. FakeKernel32SizingAndInit CloseHandle(0) and CloseHandle(-1) fail with ERROR_INVALID_HANDLE (6)."""
     fake_k32 = FakeKernel32SizingAndInit()
