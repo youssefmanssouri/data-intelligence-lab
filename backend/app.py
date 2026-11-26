@@ -169,6 +169,9 @@ def create_app(
             limits=IngestionLimits(max_bytes=app_settings.max_upload_bytes),
         )
     app.state.settings = app_settings
+    storage = getattr(app.state.adapter, "storage", None)
+    if hasattr(storage, "sweep_stale_staging"):
+        storage.sweep_stale_staging()
     resolve_effective_upload_budget(app_settings, app.state.adapter)
 
     # Register RFC 7807 Problem Details error boundary
