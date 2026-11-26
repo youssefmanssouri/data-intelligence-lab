@@ -82,11 +82,23 @@ function Get-VcRuntime {
     return $null
 }
 
+# Start-Process -Wait in Windows PowerShell 5.1 also waits for every descendant process;
+# wait for the started process alone, with a deadline.
+function Wait-ProcessOnly($Process, [int]$TimeoutSeconds) {
+    $null = $Process.Handle  # keeps the exit code readable after the process ends
+    if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
+        try { $Process.Kill() } catch { }
+        throw "$($Process.ProcessName) did not exit within $TimeoutSeconds s"
+    }
+    return $Process.ExitCode
+}
+
 function Invoke-Setup([string]$LogName, [string[]]$Extra = @()) {
     $log = Join-Path $Work $LogName
     $setupArgs = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$log`"") + $Extra
-    $p = Start-Process -FilePath $Setup -ArgumentList $setupArgs -Wait -PassThru
-    return @{ ExitCode = $p.ExitCode; Log = $(if (Test-Path $log) { Get-Content $log -Raw } else { "" }) }
+    $p = Start-Process -FilePath $Setup -ArgumentList $setupArgs -PassThru
+    $code = Wait-ProcessOnly $p 900
+    return @{ ExitCode = $code; Log = $(if (Test-Path $log) { Get-Content $log -Raw } else { "" }) }
 }
 
 function Get-AppProcesses([string]$Dir) {
@@ -168,15 +180,17 @@ try { & {
     $py = Join-Path $DefaultAppDir "runtime\python\python.exe"
     $smokeEvidence = Join-Path $Work "smoke-evidence.json"
     $smokeOut = Join-Path $Work "smoke-output.txt"
-    $p = Start-Process -FilePath $py -ArgumentList @("-B", "`"$(Join-Path $PSScriptRoot 'smoke_test_bundle.py')`"",
-            "--installed", "`"$DefaultAppDir`"", "--work-dir", "`"$(Join-Path $Work 'smoke')`"", "--evidence", "`"$smokeEvidence`"") `
-         -Wait -PassThru -NoNewWindow -RedirectStandardOutput $smokeOut -RedirectStandardError (Join-Path $Work "smoke-error.txt")
-    Get-Content $smokeOut | ForEach-Object { Write-Host "  $_" }
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"  # native stderr lines must not become terminating errors
+    & $py -B (Join-Path $PSScriptRoot 'smoke_test_bundle.py') --installed $DefaultAppDir --work-dir (Join-Path $Work 'smoke') --evidence $smokeEvidence *>&1 |
+        ForEach-Object { "$_" } | Tee-Object -FilePath $smokeOut | ForEach-Object { Write-Host "  $_" }
+    $smokeCode = $LASTEXITCODE
+    $ErrorActionPreference = $previous
     if (Test-Path $smokeEvidence) {
         $Evidence.smoke = Get-Content $smokeEvidence -Raw | ConvertFrom-Json
         $Evidence.smoke.PSObject.Properties.Remove("launcher_output")
     }
-    Add-Check "installed-smoke-test" ($p.ExitCode -eq 0) "exit $($p.ExitCode)"
+    Add-Check "installed-smoke-test" ($smokeCode -eq 0) "exit $smokeCode"
 
     # --- Interactive checks: the real user path -----------------------------------
     if (-not $SkipInteractive) {
@@ -204,10 +218,11 @@ try { & {
     Set-Content -Path $sentinel -Value "created by Verify-DataIntelligenceLab.ps1 $Stamp" -Encoding ASCII
     $before = @(Get-ChildItem $UserStorage -Recurse -File | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" })
     $Evidence.storage_files_before_uninstall = $before.Count
-    $u = Start-Process -FilePath (Join-Path $DefaultAppDir "unins000.exe") -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$(Join-Path $Work 'uninstall.log')`"") -Wait -PassThru
+    $u = Start-Process -FilePath (Join-Path $DefaultAppDir "unins000.exe") -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$(Join-Path $Work 'uninstall.log')`"") -PassThru
+    $uninstallCode = Wait-ProcessOnly $u 600
     $deadline = (Get-Date).AddSeconds(180)
     while (((Test-Path $DefaultAppDir) -or (Test-Path $UninstallKey)) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
-    Add-Check "uninstall-exit-code" ($u.ExitCode -eq 0) $u.ExitCode
+    Add-Check "uninstall-exit-code" ($uninstallCode -eq 0) $uninstallCode
     Add-Check "install-folder-removed" (-not (Test-Path $DefaultAppDir))
     Add-Check "shortcuts-removed" (-not (Test-Path $StartMenuDir))
     Add-Check "uninstall-entry-removed" (-not (Test-Path $UninstallKey))

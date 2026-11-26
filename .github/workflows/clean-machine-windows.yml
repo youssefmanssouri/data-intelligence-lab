@@ -237,7 +237,7 @@ jobs:
           Copy-Item "$([Environment]::GetFolderPath('Desktop'))\dil-verification-*.json" 'C:\dil-shared\' -ErrorAction SilentlyContinue
           exit $code
           '@ | Set-Content C:\dil-shared\std-kit.ps1 -Encoding UTF8
-          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-kit.ps1 -Name std-kit
+          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-kit.ps1 -Name std-kit -TimeoutMinutes 15
           if ($LASTEXITCODE -ne 0) { throw "kit failed as a standard user ($LASTEXITCODE)" }
           Stop-Process -Id $other.Id -Force -ErrorAction SilentlyContinue
           $ev = Get-ChildItem C:\dil-shared\dil-verification-*.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
@@ -257,7 +257,7 @@ jobs:
           & '$py' 'C:\dil-shared\packaging\test_installer.py' --setup 'C:\dil-shared\kit\$env:SETUP_NAME' --bundle 'C:\dil-shared\bundle' --work-dir 'C:\dil-shared\std-lifecycle' --expect-standard-user --evidence 'C:\dil-shared\std-lifecycle.json'
           exit `$LASTEXITCODE
           "@ | Set-Content C:\dil-shared\std-lifecycle.ps1 -Encoding UTF8
-          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-lifecycle.ps1 -Name std-lifecycle
+          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-lifecycle.ps1 -Name std-lifecycle -TimeoutMinutes 20
           if ($LASTEXITCODE -ne 0) { throw "lifecycle failed as a standard user ($LASTEXITCODE)" }
           Stop-Process -Id $other.Id -Force -ErrorAction SilentlyContinue
 
@@ -310,7 +310,7 @@ jobs:
           Copy-Item "$([Environment]::GetFolderPath('Desktop'))\dil-verification-*.json" 'C:\dil-shared\' -ErrorAction SilentlyContinue
           exit $code
           '@ | Set-Content C:\dil-shared\std-kit-phase1.ps1 -Encoding UTF8
-          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-kit-phase1.ps1 -Name std-kit-phase1
+          & .github\scripts\Invoke-AsStandardUser.ps1 -ScriptPath C:\dil-shared\std-kit-phase1.ps1 -Name std-kit-phase1 -TimeoutMinutes 10
           if ($LASTEXITCODE -ne 0) { throw "kit phase 1 failed as a standard user ($LASTEXITCODE)" }
           $ev = Get-ChildItem C:\dil-shared\dil-verification-*.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
           "kit result: $($ev.result), phase $($ev.phase): $($ev.phase1.log)"
