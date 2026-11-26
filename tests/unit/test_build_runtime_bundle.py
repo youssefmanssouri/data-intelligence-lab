@@ -390,3 +390,15 @@ def test_precompile_fails_closed_on_syntax_error(tmp_path: Path) -> None:
     (tmp_path / "bad.py").write_text("def broken(:\n", encoding="utf-8")
     with pytest.raises(b.BundleError, match="compilation failed"):
         b.precompile_bytecode(tmp_path, [tmp_path])
+
+
+def test_verify_bundle_allows_only_accepted_unlisted_files(release_bundle: Path) -> None:
+    out = release_bundle
+    (out / "unins000.exe").write_bytes(b"MZ")
+    with pytest.raises(b.BundleError, match="unlisted"):
+        b.verify_bundle(out)
+    assert b.verify_bundle(out, allow_unlisted=lambda rel: rel == "unins000.exe")["file_count"] > 0
+    (out / "backend" / "__pycache__").mkdir()
+    (out / "backend" / "__pycache__" / "x.cpython-312.pyc").write_bytes(b"x")
+    with pytest.raises(b.BundleError, match="unlisted"):
+        b.verify_bundle(out, allow_unlisted=lambda rel: rel == "unins000.exe")

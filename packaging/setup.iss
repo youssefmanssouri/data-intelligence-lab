@@ -1,36 +1,57 @@
-; Data Intelligence Lab v1.0 - Inno Setup Packaging Script
+; Data Intelligence Lab v1.0 - Inno Setup Packaging Script (Inno Setup 6.3+)
 ; Target: Per-user Windows installation under {localappdata}\Programs\Data Intelligence Lab
-; Implements crash-safe manifest transitions, 3-category process detection, and storage preservation.
+; Implements crash-safe manifest transitions, 3-category process detection, storage preservation,
+; and a fail-closed Microsoft Visual C++ Redistributable prerequisite check (never downloads it).
+;
+; Compile:  ISCC.exe /DBundleDir=<staged bundle> [/DOutputDir=<dir>] [/DAppVersion=1.0.0] packaging\setup.iss
 
 #define MyAppName "Data Intelligence Lab"
-#define MyAppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Data Intelligence Lab Project"
-#define MyAppURL "http://127.0.0.1:3000"
-#define MyAppExeName "launcher.py"
 #define MyAppId "{{D1A7B1CE-1A8B-4C9D-9E5A-3A6D47C3B8E1}}"
+#ifndef BundleDir
+  #error Define BundleDir: ISCC.exe /DBundleDir=<path to the bundle staged by build_runtime_bundle.py>
+#endif
+#ifndef OutputDir
+  #define OutputDir SourcePath + "\..\dist"
+#endif
+; Minimum Microsoft Visual C++ 2015-2022 Redistributable (x64): 14.44 (overridable only for tests).
+#ifndef VCMinMinor
+  #define VCMinMinor 44
+#endif
+#ifndef Compression
+  #define Compression "lzma2/max"
+#endif
 
 [Setup]
 AppId={#MyAppId}
 AppName={#MyAppName}
-AppVersion={#MyAppVersion}
+AppVersion={#AppVersion}
+AppVerName={#MyAppName} {#AppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL={#MyAppURL}
-AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}
+VersionInfoVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\Data Intelligence Lab
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir={#SourcePath}\..\dist
-OutputBaseFilename=DataIntelligenceLab-Setup-1.0.0
+OutputDir={#OutputDir}
+OutputBaseFilename=DataIntelligenceLab-Setup-{#AppVersion}
 PrivilegesRequired=lowest
-Compression=lzma2/max
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+; The launcher requires Windows 10 version 1703 (build 15063) or later.
+MinVersion=10.0.15063
+Compression={#Compression}
 SolidCompression=yes
 WizardStyle=modern
 DisableDirPage=no
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\runtime\python\python.exe
+UninstallDisplayName={#MyAppName}
 CloseApplications=no
 RestartApplications=no
+SetupLogging=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,16 +60,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; The runtime bundle is staged into a temp directory or specified bundle directory prior to compilation
-Source: "{#SourcePath}\..\bundle\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The bundle staged and verified by packaging/build_runtime_bundle.py (it contains manifest.json).
+Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\runtime\python\pythonw.exe"; Parameters: """{app}\launcher.py"""; WorkingDir: "{app}"
+; python.exe (console): the launcher's window shows the local URL, and closing it (or Ctrl+C) stops the app.
+Name: "{group}\{#MyAppName}"; Filename: "{app}\runtime\python\python.exe"; Parameters: """{app}\launcher.py"""; WorkingDir: "{app}"; Comment: "Start Data Intelligence Lab (close the window to stop it)"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\runtime\python\pythonw.exe"; Parameters: """{app}\launcher.py"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\runtime\python\python.exe"; Parameters: """{app}\launcher.py"""; WorkingDir: "{app}"; Comment: "Start Data Intelligence Lab (close the window to stop it)"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\runtime\python\pythonw.exe"; Parameters: """{app}\launcher.py"""; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\runtime\python\python.exe"; Parameters: """{app}\launcher.py"""; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; Safely remove installed runtime artifacts and manifest journals
@@ -56,6 +78,8 @@ Type: files; Name: "{app}\manifest.json"
 Type: files; Name: "{app}\manifest.current.json"
 Type: files; Name: "{app}\manifest.previous.json"
 Type: files; Name: "{app}\install.journal"
+; Next.js writes its rendered-route cache here at runtime.
+Type: filesandordirs; Name: "{app}\frontend\.next\server\route-cache"
 ; CRITICAL SAFETY RULE: Never delete or reference {userprofile}\.data-intelligence-lab\storage!
 
 [Code]
@@ -106,6 +130,19 @@ function QueryFullProcessImageNameW(hProcess: THandle; dwFlags: DWORD; lpExeName
 function GetLastError(): DWORD;
   external 'GetLastError@kernel32.dll stdcall';
 
+// Copies the NUL-terminated szExeFile buffer into a String.
+function EntryExeName(var pe: TProcessEntry32W): String;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to 259 do
+  begin
+    if pe.szExeFile[I] = #0 then Break;
+    Result := Result + pe.szExeFile[I];
+  end;
+end;
+
 // Checks running processes and categorizes instances matching {app}
 function CheckRunningInstances(): Boolean;
 var
@@ -138,9 +175,9 @@ begin
     if (hSnapshot = 0) or (hSnapshot = THandle(INVALID_HANDLE_VALUE)) then
     begin
       // Category 3: Process enumeration API failure
-      if MsgBox('Setup was unable to verify running background processes (snapshot failure).' + #13#10 +
+      if SuppressibleMsgBox('Setup was unable to verify running background processes (snapshot failure).' + #13#10 +
                 'If Data Intelligence Lab is running, please close it and click Retry.',
-                mbError, MB_RETRYCANCEL) = IDRETRY then
+                mbError, MB_RETRYCANCEL, IDCANCEL) = IDRETRY then
       begin
         RetryCheck := True;
         Continue;
@@ -157,14 +194,14 @@ begin
       if Process32FirstW(hSnapshot, pe) then
       begin
         repeat
-          ExeName := Lowercase(Trim(pe.szExeFile));
+          ExeName := Lowercase(Trim(EntryExeName(pe)));
           // Filter candidate processes (launcher, python runtime, or node runtime)
           if (ExeName = 'pythonw.exe') or (ExeName = 'python.exe') or (ExeName = 'node.exe') then
           begin
             hProc := OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pe.th32ProcessID);
             if hProc = 0 then
             begin
-              Err := GetLastError();
+              Err := DLLGetLastError();
               // Process exited during enumeration -> safe to ignore
               if (Err = ERROR_INVALID_PARAMETER) then
               begin
@@ -220,6 +257,12 @@ begin
             end;
           end;
         until not Process32NextW(hSnapshot, pe);
+      end
+      else
+      begin
+        // Enumeration itself failed: never treat that as "no instance running".
+        Category3Detected := True;
+        Category3Reason := 'Process enumeration failed (Win32 error ' + IntToStr(DLLGetLastError()) + ').';
       end;
     finally
       CloseHandle(hSnapshot);
@@ -228,9 +271,9 @@ begin
     if Category1Detected then
     begin
       // Category 1: Application running from {app}. Ask user to close and retry.
-      if MsgBox('Data Intelligence Lab is currently running (Process ID: ' + IntToStr(ConflictPID) + ').' + #13#10 +
+      if SuppressibleMsgBox('Data Intelligence Lab is currently running (Process ID: ' + IntToStr(ConflictPID) + ').' + #13#10 +
                 'Please save your work, close the application, and click Retry to continue.',
-                mbConfirmation, MB_RETRYCANCEL) = IDRETRY then
+                mbConfirmation, MB_RETRYCANCEL, IDCANCEL) = IDRETRY then
       begin
         RetryCheck := True;
       end
@@ -243,10 +286,10 @@ begin
     else if Category3Detected then
     begin
       // Category 3: Uncertainty / Access Denied. Fail safe with advisory dialog.
-      if MsgBox('Setup was unable to verify all background processes.' + #13#10 +
+      if SuppressibleMsgBox('Setup was unable to verify all background processes.' + #13#10 +
                 Category3Reason + #13#10 +
                 'If Data Intelligence Lab is running, please close it and click Retry.',
-                mbError, MB_RETRYCANCEL) = IDRETRY then
+                mbError, MB_RETRYCANCEL, IDCANCEL) = IDRETRY then
       begin
         RetryCheck := True;
       end
@@ -260,7 +303,83 @@ begin
   until not RetryCheck;
 end;
 
+// ---------------------------------------------------------------------------
+// Microsoft Visual C++ 2015-2022 Redistributable (x64) prerequisite
+// ---------------------------------------------------------------------------
+// The bundle ships no Microsoft CRT; CPython and PyArrow load it from the system.
+// Detection uses the registration Microsoft documents:
+//   HKLM\SOFTWARE[\WOW6432Node]\Microsoft\VisualStudio\14.0\VC\Runtimes\x64
+// Setup never downloads or installs the runtime.
+
+const
+  VC_RUNTIME_KEY = 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64';
+  VC_MIN_MAJOR = 14;
+  VC_MIN_MINOR = {#VCMinMinor};
+  VC_DOWNLOAD_URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
+
+function ReadVCRuntime(RootKey: Integer; var Major, Minor, Bld: Cardinal): Boolean;
+var
+  Installed: Cardinal;
+begin
+  Result := RegQueryDWordValue(RootKey, VC_RUNTIME_KEY, 'Installed', Installed) and (Installed = 1) and
+            RegQueryDWordValue(RootKey, VC_RUNTIME_KEY, 'Major', Major) and
+            RegQueryDWordValue(RootKey, VC_RUNTIME_KEY, 'Minor', Minor) and
+            RegQueryDWordValue(RootKey, VC_RUNTIME_KEY, 'Bld', Bld);
+end;
+
+function VCRuntimeSatisfied(var Found: String): Boolean;
+var
+  Major, Minor, Bld: Cardinal;
+  Views: array[0..1] of Integer;
+  I: Integer;
+begin
+  Result := False;
+  Found := '';
+  Views[0] := HKLM64;
+  Views[1] := HKLM32;
+  for I := 0 to 1 do
+  begin
+    if ReadVCRuntime(Views[I], Major, Minor, Bld) then
+    begin
+      Found := IntToStr(Major) + '.' + IntToStr(Minor) + '.' + IntToStr(Bld);
+      if (Major > VC_MIN_MAJOR) or ((Major = VC_MIN_MAJOR) and (Minor >= VC_MIN_MINOR)) then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+  end;
+end;
+
 function InitializeSetup(): Boolean;
+var
+  Found, Detail: String;
+begin
+  Result := VCRuntimeSatisfied(Found);
+  if not Result then
+  begin
+    if Found = '' then
+      Detail := 'It is not installed.'
+    else
+      Detail := 'Installed version: ' + Found + '.';
+    Log('VC++ runtime prerequisite not met (required ' + IntToStr(VC_MIN_MAJOR) + '.' + IntToStr(VC_MIN_MINOR) + ' or later). ' + Detail);
+    SuppressibleMsgBox('Data Intelligence Lab requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), ' +
+              'version ' + IntToStr(VC_MIN_MAJOR) + '.' + IntToStr(VC_MIN_MINOR) + ' or later.' + #13#10 + Detail + #13#10#13#10 +
+              'Install it from Microsoft (' + VC_DOWNLOAD_URL + '), then run this setup again.',
+              mbCriticalError, MB_OK, IDOK);
+  end;
+end;
+
+// {app} is only known once the destination is chosen, so the running-instance
+// check happens here, before any file is replaced.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if not CheckRunningInstances() then
+    Result := 'Data Intelligence Lab is running from the destination folder, or running processes could not be verified. Close it and run setup again.';
+end;
+
+function InitializeUninstall(): Boolean;
 begin
   Result := CheckRunningInstances();
 end;

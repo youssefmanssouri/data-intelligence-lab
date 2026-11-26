@@ -3,9 +3,11 @@ Data Intelligence Lab - independent smoke test of a staged Windows runtime bundl
 
 Usage (Windows only, from any Python 3.12+):
     python packaging/smoke_test_bundle.py --bundle <BUNDLE_DIR> --work-dir <EMPTY_DIR> [--evidence out.json]
+    python packaging/smoke_test_bundle.py --installed <APP_DIR> --work-dir <EMPTY_DIR>   (an installed copy)
 
 The bundle is first re-verified against its manifest, then copied to a path that
-contains spaces (as an installed copy would be) and exercised only through its
+contains spaces (as an installed copy would be; with --installed, the installed
+directory is tested where it is) and exercised only through its
 own executables, with PATH reduced to the Windows system directories so nothing
 can fall back to the build machine's Python or Node.js:
 
@@ -19,6 +21,8 @@ can fall back to the build machine's Python or Node.js:
      STORAGE_DIR and read back by the bundled runtime.
   4. Killing the launcher process tears down both services (Job Object
      KILL_ON_JOB_CLOSE): both ports stop accepting connections.
+  5. Running the app wrote nothing into the application directory except the
+     Next.js route cache (which the uninstaller removes).
 
 Each check prints "CHECK <name>: PASS"; any failure exits non-zero.
 """
@@ -44,6 +48,11 @@ import uuid
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 from build_runtime_bundle import NODE_VERSION, verify_bundle  # noqa: E402
+
+# Files Inno Setup adds next to the bundle (packaging/setup.iss).
+INSTALLER_FILES = frozenset({"unins000.exe", "unins000.dat", "unins000.msg",
+                             "manifest.current.json", "manifest.previous.json"})
+RUNTIME_CACHE_PREFIX = "frontend/.next/server/route-cache/"
 
 SAMPLE_CSV = (
     "id,name,amount,joined\n"
@@ -146,18 +155,22 @@ def port_closed(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
-def smoke(bundle: Path, work: Path, evidence: Dict[str, object]) -> Dict[str, object]:
+def smoke(bundle: Path, work: Path, evidence: Dict[str, object], installed: bool = False) -> Dict[str, object]:
     if sys.platform != "win32":
         raise SmokeFailure("The bundle targets Windows; run this smoke test on Windows.")
 
-    verified = verify_bundle(bundle)
+    installer_extra = (lambda rel: rel in INSTALLER_FILES) if installed else None
+    verified = verify_bundle(bundle, allow_unlisted=installer_extra)
     check("manifest", True, f"{verified['file_count']} files match manifest.json")
     evidence["manifest"] = verified
 
     if work.exists() and any(work.iterdir()):
         raise SmokeFailure(f"--work-dir must be empty: {work}")
-    install = work / "Program Files Copy" / "Data Intelligence Lab"
-    shutil.copytree(bundle, install)
+    if installed:
+        install = bundle
+    else:
+        install = work / "Program Files Copy" / "Data Intelligence Lab"
+        shutil.copytree(bundle, install)
     storage = work / "user storage"
     storage.mkdir(parents=True)
     env = scrubbed_env(storage)
@@ -245,6 +258,23 @@ def smoke(bundle: Path, work: Path, evidence: Dict[str, object]) -> Dict[str, ob
         while time.monotonic() < deadline and not all(port_closed(p) for p in ports.values()):
             time.sleep(0.5)
         check("job-object-teardown", all(port_closed(p) for p in ports.values()), ports)
+
+        # 5. The app directory is read-only at runtime apart from Next.js's route cache.
+        written: List[str] = []
+
+        def runtime_written(rel: str) -> bool:
+            if (installed and rel in INSTALLER_FILES) or rel.startswith(RUNTIME_CACHE_PREFIX):
+                written.append(rel)
+                return True
+            return False
+
+        try:
+            verify_bundle(install, allow_unlisted=runtime_written)
+        except Exception as exc:
+            raise SmokeFailure(f"CHECK app-dir-unchanged: FAIL {exc}") from exc
+        cache_files = [w for w in written if w.startswith(RUNTIME_CACHE_PREFIX)]
+        evidence["runtime_cache_files"] = len(cache_files)
+        check("app-dir-unchanged", True, f"only {len(cache_files)} Next.js route-cache file(s) added")
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -254,13 +284,16 @@ def smoke(bundle: Path, work: Path, evidence: Dict[str, object]) -> Dict[str, ob
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--bundle", required=True, type=Path)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--bundle", type=Path, help="staged bundle (tested on a copy)")
+    target.add_argument("--installed", type=Path, help="installed application directory (tested in place)")
     parser.add_argument("--work-dir", required=True, type=Path)
     parser.add_argument("--evidence", type=Path, default=None)
     args = parser.parse_args()
     evidence: Dict[str, object] = {}
     try:
-        smoke(args.bundle.resolve(), args.work_dir.resolve(), evidence)
+        target = args.installed or args.bundle
+        smoke(target.resolve(), args.work_dir.resolve(), evidence, installed=args.installed is not None)
         evidence["result"] = "PASS"
         print("BUNDLE_SMOKE_TEST: PASS")
         return 0
