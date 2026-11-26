@@ -53,7 +53,10 @@ def test_requirements_vendor_lock_integrity() -> None:
             unified_entries.append(current_entry.strip())
             current_entry = ""
 
-    assert len(unified_entries) == 25, f"Expected 25 production packages, found {len(unified_entries)}"
+    # 26 = the full cp312-win_amd64 closure resolved by pip, including opentelemetry-api
+    # (required by fastapi==0.162.0). The vendoring command uses --require-hashes, so a missing
+    # dependency fails it; this count keeps the lock and that closure in step.
+    assert len(unified_entries) == 26, f"Expected 26 production packages, found {len(unified_entries)}"
 
     for entry in unified_entries:
         match = re.match(r"^([a-zA-Z0-9_\-]+)==([^\s]+)\s+--hash=sha256:([a-fA-F0-9]{64})$", entry)
