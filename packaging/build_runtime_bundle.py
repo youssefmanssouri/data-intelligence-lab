@@ -27,9 +27,9 @@ import zipfile
 # ---------------------------------------------------------------------------
 
 PYTHON_EMBED_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
-# UNVERIFIED: not yet checked against the file published on python.org. Every other pin in
-# this repository was found not to match its published file; verify this before a release.
-PYTHON_EMBED_SHA256 = "0ec2820573e895c2cb98ee43c08182ecbf84f1aa63b7eef4d4008272993fbce8"
+# SHA-256 of the file published at PYTHON_EMBED_URL; its MD5 (fe8ef205f2e9c3ba44d0cf9954e1abd3)
+# matches the MD5 python.org lists for "Windows embeddable package (64-bit)" on the 3.12.10 page.
+PYTHON_EMBED_SHA256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 
 NODE_EXE_URL = "https://nodejs.org/dist/v20.18.3/win-x64/node.exe"
 # Matches https://nodejs.org/dist/v20.18.3/SHASUMS256.txt ("win-x64/node.exe") and the downloaded file.
