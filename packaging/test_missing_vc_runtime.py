@@ -11,7 +11,9 @@ Usage:
 
 Scenario (the real prerequisite, not a test build):
   1. With the runtime present, install the app silently (exit 0).
-  2. Uninstall the VC++ x64 runtime the way Windows does (its registered uninstaller).
+  2. Uninstall the VC++ x64 runtime the way Windows does (its registered uninstaller). Where
+     other products keep it registered (CI images), only its registration is removed, and the
+     evidence records that method.
   3. Start the installed app: no service may start, and the user must get either the
      launcher's actionable message or Windows' missing-DLL failure; which one is recorded.
   4. Re-running setup is refused by the real 14.44 check ("It is not installed").
@@ -111,6 +113,17 @@ def vc_runtime_msis() -> List[Dict[str, str]]:
     return list({m["product_code"]: m for m in found}.values())
 
 
+def delete_vc_registration() -> None:
+    import winreg
+
+    for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+        try:
+            winreg.DeleteKeyEx(winreg.HKEY_LOCAL_MACHINE, VC_KEY, winreg.KEY_WOW64_64KEY if view == winreg.KEY_WOW64_64KEY
+                               else winreg.KEY_WOW64_32KEY, 0)
+        except FileNotFoundError:
+            pass
+
+
 def uninstall_vc_runtime(evidence: Dict[str, object]) -> None:
     bundles = [b for b in vc_bundles() if b.get("BundleCachePath")]
     evidence["vc_bundles"] = bundles
@@ -131,9 +144,18 @@ def uninstall_vc_runtime(evidence: Dict[str, object]) -> None:
                                      "IGNOREDEPENDENCIES=ALL"], timeout=600)
             codes.append(result.returncode)
         evidence["vc_uninstall_exit_codes"] = codes
+    method = "uninstalled"
+    if vc_registration() is not None:
+        # CI images keep the runtime registered through other products. Remove only the
+        # registration on this disposable machine, and say so: the DLLs stay in System32, so this
+        # exercises the 14.44 checks in setup and launcher, not a machine without the DLLs (the
+        # clean-VM kit covers that).
+        delete_vc_registration()
+        method = "registration-removed (DLLs still present)"
+    evidence["vc_removal_method"] = method
     # 0 = done, 3010 = done, reboot required to replace files in use.
-    check("vc-runtime-uninstalled", all(c in (0, 3010) for c in codes) and vc_registration() is None,
-          {"exit_codes": codes, "registration": vc_registration()})
+    check("vc-runtime-unregistered", all(c in (0, 3010) for c in codes) and vc_registration() is None,
+          {"method": method, "exit_codes": codes, "registration": vc_registration()})
     system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
     evidence["system32_after_uninstall"] = {n: (system32 / n).exists() for n in ("vcruntime140.dll", "msvcp140.dll")}
 
