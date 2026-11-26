@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 import urllib.request
 import zipfile
 
@@ -607,10 +607,11 @@ def stage_bundle(
     return output_dir
 
 
-def verify_bundle(bundle_dir: Path) -> Dict[str, object]:
+def verify_bundle(bundle_dir: Path, allow_unlisted: Optional[Callable[[str], bool]] = None) -> Dict[str, object]:
     """
     Re-verifies a staged bundle independently of how it was built: every file on disk
-    is in manifest.json with a matching size and SHA-256, and nothing else is present.
+    is in manifest.json with a matching size and SHA-256, and nothing else is present
+    (except paths ``allow_unlisted`` accepts, e.g. files an installer adds).
     """
     manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
     listed = {e["path"]: e for e in manifest["files"]}
@@ -619,6 +620,8 @@ def verify_bundle(bundle_dir: Path) -> Dict[str, object]:
         for root, _, files in os.walk(bundle_dir)
         for f in files
     } - {"manifest.json"}
+    if allow_unlisted is not None:
+        on_disk = {p for p in on_disk if p in listed or not allow_unlisted(p)}
     if on_disk != set(listed):
         raise BundleError(
             f"Bundle differs from manifest: unlisted {sorted(on_disk - set(listed))[:10]}, "

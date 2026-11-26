@@ -89,12 +89,22 @@ Release mode fails closed. It:
 
 ## 5. Compiling the Inno Setup Installer
 
-Prerequisite: [Inno Setup 6](https://jrsoftware.org/isdl.php)
+Prerequisite: [Inno Setup 6.3 or later](https://jrsoftware.org/isdl.php) (for the `x64compatible` architecture identifier).
 
 ```powershell
-ISCC.exe /DSourcePath="$env:TEMP\dil_bundle" packaging/setup.iss
+ISCC.exe /DBundleDir="$env:TEMP\dil_bundle" /DOutputDir="$env:TEMP\dil_dist" packaging\setup.iss
 ```
-Generated installer: `dist\DataIntelligenceLab-Setup-1.0.0.exe`
+Generated installer: `<OutputDir>\DataIntelligenceLab-Setup-1.0.0.exe` (`OutputDir` defaults to `dist\` at the repository root). `BundleDir` is required and must be a bundle that passed `build_runtime_bundle.py --verify`.
+
+What the installer does:
+- **Per-user, no administrator rights:** installs to `%LOCALAPPDATA%\Programs\Data Intelligence Lab` on 64-bit Windows 10 version 1703 (build 15063) or later.
+- **Prerequisite check:** before showing any page, it requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), 14.44 or later. It reads the registration Microsoft documents (`HKLM\SOFTWARE[\WOW6432Node]\Microsoft\VisualStudio\14.0\VC\Runtimes\x64`), and if the runtime is missing or older it stops with Microsoft's download link. It never downloads or installs the runtime. The launcher repeats the check at every start.
+- **Running-instance check:** before replacing files (and before uninstalling), it refuses to continue while any `python.exe`, `pythonw.exe` or `node.exe` runs from the install folder, or while it cannot verify that.
+- **Shortcuts:** Start menu (and optionally desktop) shortcuts start `runtime\python\python.exe launcher.py` in a console window that shows the local URL; closing that window (or pressing Ctrl+C) stops the application.
+- **Upgrades:** the bundle's `manifest.json` is promoted to `manifest.current.json`, the previous one is kept as `manifest.previous.json`, and files listed only in the previous manifest are deleted (paths are confined to the install folder).
+- **Uninstall:** removes the installed files, the manifests and the Next.js route cache. It never touches `%USERPROFILE%\.data-intelligence-lab\storage`.
+
+Silent installation (for managed deployment): `DataIntelligenceLab-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`. In silent mode every blocking dialog defaults to Cancel, so a missing prerequisite or a running instance ends setup with a non-zero exit code instead of waiting for input.
 
 ---
 

@@ -351,3 +351,71 @@ def test_storage_and_app_paths_segregation() -> None:
     assert not user_storage.resolve().is_relative_to(install_dir.resolve())
     assert not install_dir.resolve().is_relative_to(user_storage.resolve())
     assert user_storage.name == "storage"
+
+
+def _iss() -> str:
+    return (Path(__file__).resolve().parent.parent.parent / "packaging" / "setup.iss").read_text(encoding="utf-8")
+
+
+def _section(content: str, name: str) -> str:
+    start = content.index(f"[{name}]")
+    nxt = content.find("\n[", start + 1)
+    return content[start: nxt if nxt != -1 else len(content)]
+
+
+def _pascal_routine(content: str, header: str) -> str:
+    start = content.index(header)
+    return content[start: content.index("\nend;", start)]
+
+
+def test_setup_iss_requires_explicit_bundle_and_x64_windows_10() -> None:
+    content = _iss()
+    assert "#ifndef BundleDir" in content and "#error" in content
+    assert 'Source: "{#BundleDir}\\*"' in content
+    assert "ArchitecturesAllowed=x64compatible" in content
+    assert "ArchitecturesInstallIn64BitMode=x64compatible" in content
+    assert "MinVersion=10.0.15063" in content
+    assert "PrivilegesRequired=lowest" in content
+    assert "127.0.0.1:3000" not in content, "ports are dynamic; no fixed local URL"
+
+
+def test_setup_iss_checks_vc_runtime_without_downloading() -> None:
+    content = _iss()
+    assert "#define VCMinMinor 44" in content
+    assert "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64" in content
+    assert "HKLM64" in content and "HKLM32" in content
+    init = _pascal_routine(content, "function InitializeSetup(): Boolean;")
+    assert "VCRuntimeSatisfied" in init
+    assert "{app}" not in init, "{app} is not initialized during InitializeSetup"
+    for forbidden in ("DownloadTemporaryFile", "CreateDownloadPage", "vc_redist.x64.exe /", "[Run]\nFilename: \"{tmp}"):
+        assert forbidden not in content
+
+
+def test_setup_iss_checks_running_instances_once_app_is_known() -> None:
+    content = _iss()
+    assert "CheckRunningInstances()" in _pascal_routine(content, "function PrepareToInstall(var NeedsRestart: Boolean): String;")
+    assert "CheckRunningInstances()" in _pascal_routine(content, "function InitializeUninstall(): Boolean;")
+    assert "Process enumeration failed" in content, "enumeration failure must not read as 'not running'"
+
+
+def test_setup_iss_dialogs_are_silent_safe() -> None:
+    content = _iss()
+    code = content[content.index("[Code]"):]
+    assert re.search(r"(?<!Suppressible)MsgBox\(", code) is None
+    assert "MB_RETRYCANCEL, IDCANCEL)" in code
+
+
+def test_setup_iss_shortcuts_use_console_launcher() -> None:
+    content = _iss()
+    for name in ("Icons", "Run"):
+        section = _section(content, name)
+        assert "pythonw.exe" not in section
+    assert 'Filename: "{app}\\runtime\\python\\python.exe"; Parameters: """{app}\\launcher.py"""' in _section(content, "Icons")
+
+
+def test_setup_iss_uninstall_removes_runtime_cache_but_never_storage() -> None:
+    section = _section(_iss(), "UninstallDelete")
+    assert 'Name: "{app}\\frontend\\.next\\server\\route-cache"' in section
+    entries = [line for line in section.splitlines() if line.startswith("Type:")]
+    assert entries and all('"{app}\\' in line for line in entries)
+    assert all("storage" not in line.lower() and "{userprofile}" not in line.lower() for line in entries)
