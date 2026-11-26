@@ -44,10 +44,17 @@ Data Intelligence Lab v1.0 packages a completely offline, self-contained desktop
 
 ## 3. Dependency Vendoring & Cryptographic Integrity
 
-All production Python dependencies are locked with full, unabbreviated SHA-256 wheel hashes in `packaging/requirements-vendor.txt`:
+`packaging/requirements-vendor.txt` locks the production closure for CPython 3.12 on Windows x64: 17 packages, each pinned to the SHA-256 of the one wheel used. It contains only what production code imports (FastAPI, Starlette, Uvicorn, python-multipart, PyArrow) and their required dependencies. NumPy and pandas are not used and are not vendored.
+
+**PyArrow is not taken from PyPI.** The PyPI wheel bundles `pyarrow/msvcp140.dll` (Microsoft CRT). The lock pins the source-built, CRT-free wheel instead (SHA-256 `00d2f53ae4e4e0edae7b73776378ae33d21704fcfbc22fe245538be0202a7840`), built by the R8-R5-CI workflow (run 45765026782) and published with its evidence as the pre-release `build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782`. Download that wheel (the repository is private, so use an authenticated browser or `gh release download`), then build the wheelhouse:
+
 ```powershell
-pip download -r packaging/requirements-vendor.txt --require-hashes --dest <TEMP_CACHE_DIR>
+python packaging/prepare_wheelhouse.py --pyarrow-wheel <path>\pyarrow-18.1.0-cp312-cp312-win_amd64.whl --output-dir <EMPTY_DIR>
 ```
+
+The script fails closed. It downloads the other 16 wheels from PyPI with `--require-hashes`, copies PyArrow only from the local file after checking its hash against the lock, resolves the whole lock offline from the wheelhouse (`--no-index --require-hashes`) to prove the closure is complete, rejects any wheel that bundles a Microsoft CRT file, and writes `wheelhouse-manifest.json`.
+
+The bundle therefore ships no Microsoft CRT: the target machine needs the Microsoft Visual C++ 2015-2022 Redistributable (x64), version 14.44 or later, which the app uses but never downloads or installs.
 
 ---
 
@@ -100,5 +107,6 @@ Generated installer: `dist\DataIntelligenceLab-Setup-1.0.0.exe`
 Redistributing Microsoft Visual C++ Runtime binaries (`msvcp140.dll`, `vcruntime140.dll`, etc.) requires adherence to Microsoft Visual Studio licensing terms and `REDIST.TXT`.
 
 Data Intelligence Lab packaging enforces this rule:
-- Production packages vendor their own DLLs within their respective `site-packages` directories.
+- No vendored wheel bundles a Microsoft CRT file: `prepare_wheelhouse.py` rejects any that does, and PyArrow is the source-built CRT-free wheel (see section 3). Binaries load the system Visual C++ runtime instead.
+- The CPython embeddable package itself ships `vcruntime140.dll` and `vcruntime140_1.dll`; excluding them from the bundle is part of the runtime-bundle milestone (not yet implemented).
 - Unvendored CRT DLLs placed in the application root are blocked fail-closed by `build_runtime_bundle.py` in release mode unless `--allow-crt-redistribution` is explicitly provided.
