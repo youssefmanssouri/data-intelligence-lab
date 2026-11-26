@@ -1405,7 +1405,9 @@ class UnifiedLauncher:
             self.backend_port_file.unlink()
 
         cmd = (
-            f'"{sys.executable}" -m backend.main '
+            # -B: the install directory is read-only by contract; the bundle ships
+            # precompiled bytecode, so nothing is written next to the sources.
+            f'"{sys.executable}" -B -m backend.main '
             f'--host 127.0.0.1 --port 0 --port-file "{self.backend_port_file}"'
         )
 
