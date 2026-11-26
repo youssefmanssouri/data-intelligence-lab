@@ -50,7 +50,8 @@ def _lock(path: Path, entries: dict[str, tuple[str, str]]) -> Path:
 
 def test_real_lock_pins_the_accepted_crt_free_pyarrow() -> None:
     entries = pw.parse_lock(REAL_LOCK.read_text(encoding="utf-8"))
-    assert len(entries) == 17
+    assert len(entries) == 18
+    assert "tzdata" in entries
     assert entries["pyarrow"] == ("18.1.0", ACCEPTED_PYARROW_SHA256)
     assert entries["pyarrow"][1] != PYPI_PYARROW_SHA256
 
