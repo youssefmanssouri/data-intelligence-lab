@@ -426,3 +426,11 @@ def test_setup_iss_app_id_is_a_single_braced_guid() -> None:
     m = re.search(r'#define MyAppId "(\{\{[0-9A-F-]{36}\})"', content)
     assert m, "AppId must be written {{GUID} so it expands to exactly {GUID}"
     assert not m.group(1).endswith("}}")
+
+
+def test_setup_iss_ignores_other_accounts_processes() -> None:
+    content = _iss()
+    branch = content[content.index("else if (Err = ERROR_ACCESS_DENIED) then"):]
+    branch = branch[: branch.index("end")]
+    assert "Category3Detected := True" not in branch, "access denied must not block standard users"
+    assert "Log('Ignoring process ID" in branch
