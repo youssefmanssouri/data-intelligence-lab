@@ -1,7 +1,7 @@
 """
 Data Intelligence Lab v1.0 - Standalone Runtime Bundle Builder
 Constructs a self-contained, offline-deployable runtime bundle containing:
-- Bundled Python 3.12 64-bit embeddable runtime with site-packages
+- Bundled Python 3.14 64-bit embeddable runtime with site-packages
 - Bundled Node.js 64-bit standalone executable
 - Application source files (backend, core, frontend scripts/distribution, launcher.py)
 - Cryptographic SHA-256 file manifest (manifest.json)
@@ -29,10 +29,17 @@ import zipfile
 # Cryptographic and Packaging Constants
 # ---------------------------------------------------------------------------
 
-PYTHON_EMBED_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
-# SHA-256 of the file published at PYTHON_EMBED_URL; its MD5 (fe8ef205f2e9c3ba44d0cf9954e1abd3)
-# matches the MD5 python.org lists for "Windows embeddable package (64-bit)" on the 3.12.10 page.
-PYTHON_EMBED_SHA256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
+# The bundled interpreter. Everything that depends on its version derives from these.
+PYTHON_VERSION = "3.14.10"
+PYTHON_MAJOR_MINOR = (3, 14)
+PYTHON_TAG = "314"  # python314.dll, python314.zip, *.cpython-314.pyc
+PYTHON_TARGET = f"cp{PYTHON_TAG}-win_amd64"  # wheelhouse target (prepare_wheelhouse.py)
+PYTHON_EMBED_FILE = f"python-{PYTHON_VERSION}-embed-amd64.zip"
+PYTHON_EMBED_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/{PYTHON_EMBED_FILE}"
+# SHA-256 of the file published at PYTHON_EMBED_URL. python.org signs 3.14 releases with Sigstore
+# (no MD5 list); the runtime-bundle workflow verifies {PYTHON_EMBED_URL}.sigstore against the
+# release manager's identity before building, and this pin then holds the file fixed.
+PYTHON_EMBED_SHA256 = "90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159"
 
 NODE_VERSION = "22.23.5"
 NODE_EXE_URL = f"https://nodejs.org/dist/v{NODE_VERSION}/win-x64/node.exe"
@@ -49,8 +56,8 @@ PYTHON_EMBED_EXCLUDED = frozenset({"vcruntime140.dll", "vcruntime140_1.dll"})
 # The embeddable runtime reads sys.path only from this file (PYTHONPATH is ignored).
 # Paths are relative to runtime/python/: the stdlib zip, the runtime directory, the
 # vendored packages, and the bundle root (so `python -m backend.main` finds `backend`).
-PYTHON_PTH_NAME = "python312._pth"
-PYTHON_PTH_CONTENT = "python312.zip\n.\nLib\\site-packages\n..\\..\nimport site\n"
+PYTHON_PTH_NAME = f"python{PYTHON_TAG}._pth"
+PYTHON_PTH_CONTENT = f"python{PYTHON_TAG}.zip\n.\nLib\\site-packages\n..\\..\nimport site\n"
 
 # Files with PE images the CRT gate inspects. .pyd and .node files are DLLs.
 PE_SUFFIXES = (".dll", ".pyd", ".node", ".exe")
@@ -359,8 +366,8 @@ def verify_wheelhouse(wheelhouse: Path, lock_path: Path) -> Dict[str, object]:
     if not manifest_path.is_file():
         raise BundleError(f"Wheelhouse manifest missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("target") != "cp312-win_amd64":
-        raise BundleError(f"Wheelhouse targets {manifest.get('target')!r}, expected 'cp312-win_amd64'")
+    if manifest.get("target") != PYTHON_TARGET:
+        raise BundleError(f"Wheelhouse targets {manifest.get('target')!r}, expected {PYTHON_TARGET!r}")
     if manifest.get("lock_sha256") != compute_sha256(lock_path):
         raise BundleError("Wheelhouse was built from a different requirements-vendor.txt; rebuild it")
     expected = {w["file"]: w["sha256"] for w in manifest.get("wheels", [])}
@@ -377,15 +384,15 @@ def verify_wheelhouse(wheelhouse: Path, lock_path: Path) -> Dict[str, object]:
 
 
 def install_vendor_packages(wheelhouse: Path, lock_path: Path, site_packages: Path) -> None:
-    """Installs the locked closure offline, hash-checked, for the cp312-win_amd64 target."""
+    """Installs the locked closure offline, hash-checked, for the bundled interpreter (PYTHON_TARGET)."""
     site_packages.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable, "-m", "pip", "install",
         "--no-index", "--find-links", str(wheelhouse),
         "--require-hashes", "-r", str(lock_path),
         "--target", str(site_packages),
-        "--only-binary=:all:", "--platform", "win_amd64", "--python-version", "3.12",
-        "--implementation", "cp", "--abi", "cp312",
+        "--only-binary=:all:", "--platform", "win_amd64", "--python-version", ".".join(map(str, PYTHON_MAJOR_MINOR)),
+        "--implementation", "cp", "--abi", f"cp{PYTHON_TAG}",
         "--no-compile", "--no-warn-script-location", "--disable-pip-version-check",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -457,14 +464,14 @@ def stage_frontend(fe_src: Path, fe_dest: Path, npm_command: List[str]) -> str:
 
 def precompile_bytecode(bundle_dir: Path, roots: List[Path]) -> int:
     """
-    Compiles every .py file under ``roots`` to CPython 3.12 bytecode with
+    Compiles every .py file under ``roots`` to bytecode for the bundled CPython version with
     unchecked-hash invalidation, so the installed application never writes
     __pycache__ into its install directory and file timestamps do not matter.
     Recorded source paths are made relative to the bundle (no build-machine paths).
     """
-    if sys.version_info[:2] != (3, 12):
+    if sys.version_info[:2] != PYTHON_MAJOR_MINOR:
         raise BundleError(
-            f"Bytecode must be compiled by CPython 3.12 to match the bundled runtime "
+            f"Bytecode must be compiled by CPython {'.'.join(map(str, PYTHON_MAJOR_MINOR))} to match the bundled runtime "
             f"(build interpreter is {sys.version.split()[0]})"
         )
     for root in roots:
@@ -474,7 +481,7 @@ def precompile_bytecode(bundle_dir: Path, roots: List[Path]) -> int:
         )
         if not ok:
             raise BundleError(f"Bytecode compilation failed under {root}")
-    return sum(1 for root in roots for _ in root.rglob("*.cpython-312.pyc"))
+    return sum(1 for root in roots for _ in root.rglob(f"*.cpython-{PYTHON_TAG}.pyc"))
 
 
 def _default_npm_command() -> List[str]:
@@ -564,12 +571,12 @@ def stage_bundle(
     python_dest_dir = output_dir / "runtime" / "python"
     python_dest_dir.mkdir(parents=True, exist_ok=True)
     if not skip_download:
-        cached_py = cache / "python-3.12.10-embed-amd64.zip"
+        cached_py = cache / PYTHON_EMBED_FILE
         download_with_hash_check(PYTHON_EMBED_URL, cached_py, PYTHON_EMBED_SHA256)
         runtime_info["python_excluded_files"] = stage_python_runtime(python_dest_dir, cached_py)
     else:
         (python_dest_dir / "python.exe").write_text("# development placeholder: not a Python runtime", encoding="utf-8")
-    runtime_info["python"] = {"version": "3.12.10", "embed_sha256": PYTHON_EMBED_SHA256}
+    runtime_info["python"] = {"version": PYTHON_VERSION, "embed_sha256": PYTHON_EMBED_SHA256}
 
     # 5. Vendored backend dependencies
     if wheelhouse is not None:
