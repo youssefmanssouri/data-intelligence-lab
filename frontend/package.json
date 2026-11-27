@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
     "test:real": "playwright test --config playwright.real.config.ts",
-    "test:proxy": "node --test tests/security.test.mjs tests/json-body.test.mjs tests/proxy.test.mjs"
+    "test:proxy": "node --test tests/security.test.mjs tests/json-body.test.mjs tests/proxy.test.mjs tests/port-file.test.mjs"
   },
   "engines": {
     "node": ">=22.14.0"

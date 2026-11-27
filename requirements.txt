@@ -1,10 +1,16 @@
 # Data Intelligence Lab - Vertical Slice 1 Dependencies
-# Python 3.12 Compatible
+# Python 3.12 to 3.14
 
 # Tabular Data Processing & Columnar Formats
-pandas>=2.2.0,<3.0.0
-numpy>=1.26.0,<3.0.0
-pyarrow>=15.0.0,<19.0.0
+# Nothing in backend/, core/ or tests/ imports pandas or NumPy (the shipped closure
+# dropped them in Milestone A), so they are not development dependencies either.
+# PyArrow follows the shipped runtime: 18.1.0 on CPython 3.12 today, 26.0.1 on 3.14
+# (the runtime move). 18.x publishes no CPython 3.14 wheels.
+pyarrow>=15.0.0,<19.0.0; python_version < "3.14"
+pyarrow>=26.0.1,<27.0.0; python_version >= "3.14"
+# zoneinfo needs the IANA database; Windows has none, so tzdata is required there (as in
+# the shipped closure). It came in through pandas before; it must be listed explicitly.
+tzdata>=2024.1
 
 # Automated Testing & HTTP Client
 pytest>=8.0.0,<9.0.0

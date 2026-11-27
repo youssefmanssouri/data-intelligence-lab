@@ -1,0 +1,491 @@
+name: PyArrow 18.1.0 CRT-Free Windows x64 Build (R8-R5)
+
+on:
+  # workflow_dispatch is only offered for workflows on the default branch, so a
+  # push trigger scoped to this dedicated branch starts the build here.
+  push:
+    branches:
+      - phase/1f3-8-r8-r5-pyarrow-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-pyarrow-crt-free:
+    name: Build PyArrow 18.1.0 (cp312-win_amd64, /MD, CRT-Free)
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout dedicated workflow branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12.10 x64
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12.10"
+          architecture: "x64"
+
+      - name: Prepare isolated CI workspace
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ws = Join-Path $env:RUNNER_TEMP "pyarrow-r8-r5"
+          foreach ($sub in @("src", "dist", "build-cpp", "artifact", "gnupg")) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $ws $sub) | Out-Null
+          }
+          "R8R5_WS=$ws" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Record build toolchain and runner VC++ runtime inventory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $invPath = Join-Path $env:R8R5_WS "artifact\toolchain-inventory.txt"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw "VS 2022 C++ Build Tools not found on runner" }
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
+          "R8R5_VCVARS=$vcvars" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $cmdOut = cmd /c "`"$vcvars`" >nul 2>&1 && cl 2>&1 && link /? 2>&1 | findstr /B /C:`"Microsoft (R) Incremental Linker`""
+          # The SDK the compiler actually uses is the one vcvars64 selects (%WindowsSDKVersion%).
+          # Only version-shaped Include folders are SDKs (others, such as "wdf", are not).
+          $sdkLine = cmd /c "`"$vcvars`" >nul 2>&1 && set WindowsSDKVersion" | Where-Object { $_ -match '^WindowsSDKVersion=' } | Select-Object -First 1
+          $sdkUsed = ([string]$sdkLine -replace '^WindowsSDKVersion=', '').Trim().TrimEnd('\')
+          if ($sdkUsed -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Could not determine the Windows SDK selected by vcvars64 (got '$sdkUsed')" }
+          $sdkInstalled = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_.Name } -Descending | ForEach-Object { $_.Name }) -join ", "
+          $vcReg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+          $pyVer = & python -c "import sys, sysconfig; print(sys.version, sysconfig.get_platform())"
+
+          @(
+            "Runner OS: $env:ImageOS ($env:ImageVersion)"
+            "VS Installation Path: $vsPath"
+            "Windows SDK Version (selected by vcvars64): $sdkUsed"
+            "Windows SDK Versions Installed: $sdkInstalled"
+            "Python: $pyVer"
+            "Runner Preinstalled VC++ x64 Registry: Installed=$($vcReg.Installed) Major=$($vcReg.Major) Minor=$($vcReg.Minor) Bld=$($vcReg.Bld) Rbld=$($vcReg.Rbld) Version=$($vcReg.Version)"
+            "cl / link output:"
+            $cmdOut
+          ) | Out-File -FilePath $invPath -Encoding utf8
+          Get-Content $invPath
+
+      - name: Download and verify Apache Arrow 18.1.0 source archive and PGP signature
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $srcDir = Join-Path $env:R8R5_WS "src"
+          $gpgHome = (Join-Path $env:R8R5_WS "gnupg") -replace "\\", "/"
+          if ($gpgHome -match "^([A-Za-z]):/(.*)$") { $gpgHome = "/" + $Matches[1].ToLower() + "/" + $Matches[2] }
+
+          $baseUrl = "https://archive.apache.org/dist/arrow/arrow-18.1.0"
+          $tarFile = Join-Path $srcDir "apache-arrow-18.1.0.tar.gz"
+          $ascFile = Join-Path $srcDir "apache-arrow-18.1.0.tar.gz.asc"
+          $sha256File = Join-Path $srcDir "apache-arrow-18.1.0.tar.gz.sha256"
+          $sha512File = Join-Path $srcDir "apache-arrow-18.1.0.tar.gz.sha512"
+          $keysFile = Join-Path $srcDir "KEYS"
+
+          Invoke-WebRequest -Uri "$baseUrl/apache-arrow-18.1.0.tar.gz" -OutFile $tarFile
+          Invoke-WebRequest -Uri "$baseUrl/apache-arrow-18.1.0.tar.gz.asc" -OutFile $ascFile
+          Invoke-WebRequest -Uri "$baseUrl/apache-arrow-18.1.0.tar.gz.sha256" -OutFile $sha256File
+          Invoke-WebRequest -Uri "$baseUrl/apache-arrow-18.1.0.tar.gz.sha512" -OutFile $sha512File
+          Invoke-WebRequest -Uri "https://downloads.apache.org/arrow/KEYS" -OutFile $keysFile
+
+          $expectedSha256 = "2dc8da5f8796afe213ecc5e5aba85bb82d91520eff3cf315784a52d0fa61d7fc"
+          $expectedSha512 = "7249c03a6097bc64fb0092143e4d4aaef3227565147e6254f026ddd504177c8dd565a184a0df39743dc989070dc3785e5b66f738c8e310ed9c982b61c2ec4914"
+          $actualSha256 = (Get-FileHash -Path $tarFile -Algorithm SHA256).Hash.ToLower()
+          $actualSha512 = (Get-FileHash -Path $tarFile -Algorithm SHA512).Hash.ToLower()
+          $size = (Get-Item $tarFile).Length
+
+          if ($actualSha256 -ne $expectedSha256) { throw "SHA-256 mismatch: $actualSha256 != $expectedSha256" }
+          if ($actualSha512 -ne $expectedSha512) { throw "SHA-512 mismatch: $actualSha512 != $expectedSha512" }
+
+          $gpg = "C:\Program Files\Git\usr\bin\gpg.exe"
+          if (-not (Test-Path $gpg)) { $gpg = "gpg" }
+          $toPosix = { param($p) $s = $p -replace "\\", "/"; if ($s -match "^([A-Za-z]):/(.*)$") { "/" + $Matches[1].ToLower() + "/" + $Matches[2] } else { $s } }
+
+          & $gpg --homedir $gpgHome --import (& $toPosix $keysFile) 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "GPG key import failed" }
+
+          $verifyOut = & $gpg --homedir $gpgHome --status-fd 1 --verify (& $toPosix $ascFile) (& $toPosix $tarFile) 2>&1 | Out-String
+          Write-Host $verifyOut
+          if ($LASTEXITCODE -ne 0) { throw "GPG signature verification failed" }
+
+          $expectedFpr = "08D3564B7C6A9CAFBFF6A66791D18FCF079F8007"
+          if ($verifyOut -notmatch "VALIDSIG $expectedFpr") {
+            throw "Signer fingerprint mismatch! Expected VALIDSIG $expectedFpr"
+          }
+
+          $authPath = Join-Path $env:R8R5_WS "artifact\source-auth.txt"
+          @(
+            "Source URL: $baseUrl/apache-arrow-18.1.0.tar.gz"
+            "Archive Filename: apache-arrow-18.1.0.tar.gz"
+            "Archive Size (bytes): $size"
+            "Verified SHA-256: $actualSha256"
+            "Verified SHA-512: $actualSha512"
+            "Pinned Signer Fingerprint: $expectedFpr"
+            "GPG Output:"
+            $verifyOut
+          ) | Out-File -FilePath $authPath -Encoding utf8
+
+          python -c "import tarfile; tarfile.open(r'$tarFile', 'r:gz').extractall(r'$srcDir')"
+          if (-not (Test-Path (Join-Path $srcDir "apache-arrow-18.1.0\cpp\CMakeLists.txt"))) {
+            throw "Extracted Arrow source tree missing cpp/CMakeLists.txt"
+          }
+
+      - name: Create isolated build virtualenv with pinned build dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $buildVenv = Join-Path $env:R8R5_WS "build-venv"
+          python -m venv $buildVenv
+          $py = Join-Path $buildVenv "Scripts\python.exe"
+          & $py -m pip install --no-cache-dir `
+            "pip==24.3.1" `
+            "setuptools==75.6.0" `
+            "setuptools-scm==8.1.0" `
+            "wheel==0.45.1" `
+            "cython==3.0.11" `
+            "numpy==2.1.3" `
+            "cmake==3.31.2" `
+            "ninja==1.11.1.3"
+          $buildInfo = & $py -m pip freeze
+          $buildInfo | Out-File -FilePath (Join-Path $env:R8R5_WS "artifact\build-dependencies.txt") -Encoding utf8
+          "R8R5_BUILD_PY=$py" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $cmakeVer = & (Join-Path $buildVenv "Scripts\cmake.exe") --version | Select-Object -First 1
+          $ninjaVer = & (Join-Path $buildVenv "Scripts\ninja.exe") --version
+          Add-Content -Path (Join-Path $env:R8R5_WS "artifact\toolchain-inventory.txt") -Value "`n$cmakeVer`nNinja: $ninjaVer"
+
+      - name: Build Apache Arrow C++ 18.1.0 (Release, /MD, CSV + Parquet)
+        shell: pwsh
+        env:
+          # Arrow 18.1.0 hard-codes dlcdn.apache.org for Thrift 0.20.0, which no longer
+          # serves that release (HTTP 404). The archive.apache.org copy is the same file:
+          # Arrow still enforces its pinned URL_HASH SHA256=b5d8311a779470e1502c027f428a1db542f5c051c8e1280ccd2163fa935ff2d6.
+          ARROW_THRIFT_URL: https://archive.apache.org/dist/thrift/0.20.0/thrift-0.20.0.tar.gz
+          # The runner image has MinGW (C:\mingw64\bin) on PATH, and CMake's Ninja generator
+          # picks its c++ over MSVC unless told otherwise (run 45733664166 built with MinGW GCC).
+          # /MD and the CRT-free goal require MSVC, so name it explicitly and verify it below.
+          CC: cl
+          CXX: cl
+        run: |
+          $ErrorActionPreference = "Stop"
+          $srcCpp = Join-Path $env:R8R5_WS "src\apache-arrow-18.1.0\cpp"
+          $buildCpp = Join-Path $env:R8R5_WS "build-cpp"
+          $distDir = Join-Path $env:R8R5_WS "dist"
+          $buildScripts = Join-Path $env:R8R5_WS "build-venv\Scripts"
+          $cfgLog = Join-Path $env:R8R5_WS "artifact\cmake-configure.log"
+          $bldLog = Join-Path $env:R8R5_WS "artifact\cmake-build.log"
+
+          $cmakeExe = Join-Path $buildScripts "cmake.exe"
+          $cfgCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;%PATH%`" && `"$cmakeExe`" -S `"$srcCpp`" -B `"$buildCpp`" -G Ninja " +
+            "-DCMAKE_BUILD_TYPE=Release " +
+            "-DCMAKE_INSTALL_PREFIX=`"$distDir`" " +
+            "-DARROW_USE_STATIC_CRT=OFF " +
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL " +
+            "-DARROW_BUILD_SHARED=ON " +
+            "-DARROW_BUILD_STATIC=OFF " +
+            "-DARROW_BUILD_TESTS=OFF " +
+            "-DARROW_CSV=ON " +
+            "-DARROW_PARQUET=ON " +
+            "-DARROW_COMPUTE=ON " +
+            "-DARROW_FILESYSTEM=ON " +
+            "-DARROW_IPC=ON " +
+            "-DARROW_JSON=ON " +
+            "-DARROW_WITH_SNAPPY=ON " +
+            "-DARROW_WITH_ZSTD=ON " +
+            "-DARROW_WITH_LZ4=ON " +
+            "-DARROW_WITH_ZLIB=ON " +
+            "-DARROW_WITH_BROTLI=OFF " +
+            "-DARROW_WITH_BZ2=OFF " +
+            "-DARROW_DEPENDENCY_SOURCE=BUNDLED"
+
+          cmd /c "$cfgCmd > `"$cfgLog`" 2>&1"
+          if ($LASTEXITCODE -ne 0) { Get-Content $cfgLog -Tail 80; throw "CMake configure failed ($LASTEXITCODE)" }
+          foreach ($lang in @("C", "CXX")) {
+            if (-not (Select-String -Path $cfgLog -SimpleMatch "The $lang compiler identification is MSVC" -Quiet)) {
+              Get-Content $cfgLog -Head 40; throw "Arrow C++ was not configured with MSVC for $lang; refusing to build"
+            }
+          }
+
+          $bldCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;%PATH%`" && `"$cmakeExe`" --build `"$buildCpp`" --target install --config Release"
+          cmd /c "$bldCmd > `"$bldLog`" 2>&1"
+          if ($LASTEXITCODE -ne 0) { Get-Content $bldLog -Tail 80; throw "CMake build/install failed ($LASTEXITCODE)" }
+
+      - name: Build PyArrow 18.1.0 wheel (cp312-win_amd64, /MD, no CRT bundling)
+        shell: pwsh
+        env:
+          # PyArrow's setup.py also drives CMake with Ninja: force MSVC here too (see above).
+          CC: cl
+          CXX: cl
+        run: |
+          $ErrorActionPreference = "Stop"
+          $srcPy = Join-Path $env:R8R5_WS "src\apache-arrow-18.1.0\python"
+          $distDir = Join-Path $env:R8R5_WS "dist"
+          $buildScripts = Join-Path $env:R8R5_WS "build-venv\Scripts"
+          $pyLog = Join-Path $env:R8R5_WS "artifact\pyarrow-build.log"
+
+          $envCmd = "`"$env:R8R5_VCVARS`" && set `"PATH=$buildScripts;%PATH%`" && " +
+            "set `"CMAKE_PREFIX_PATH=$distDir`" && " +
+            "set `"PYARROW_BUILD_TYPE=Release`" && " +
+            "set `"PYARROW_CMAKE_GENERATOR=Ninja`" && " +
+            "set `"PYARROW_WITH_PARQUET=1`" && " +
+            "set `"PYARROW_WITH_DATASET=0`" && " +
+            "set `"PYARROW_WITH_FLIGHT=0`" && " +
+            "set `"PYARROW_WITH_GANDIVA=0`" && " +
+            "set `"PYARROW_WITH_S3=0`" && " +
+            "set `"PYARROW_WITH_GCS=0`" && " +
+            "set `"PYARROW_WITH_HDFS=0`" && " +
+            "set `"PYARROW_WITH_SUBSTRAIT=0`" && " +
+            "set `"PYARROW_WITH_ACERO=0`" && " +
+            "set `"PYARROW_BUNDLE_ARROW_CPP=1`" && " +
+            "set `"PYARROW_BUNDLE_CYTHON_CPP=0`" && " +
+            "set `"PYARROW_CMAKE_OPTIONS=-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DARROW_USE_STATIC_CRT=OFF`" && " +
+            "set `"SETUPTOOLS_SCM_PRETEND_VERSION=18.1.0`" && " +
+            "cd /d `"$srcPy`" && `"$env:R8R5_BUILD_PY`" setup.py bdist_wheel"
+
+          cmd /c "$envCmd > `"$pyLog`" 2>&1"
+          if ($LASTEXITCODE -ne 0) { Get-Content $pyLog -Tail 100; throw "PyArrow bdist_wheel failed ($LASTEXITCODE)" }
+          if (-not (Select-String -Path $pyLog -SimpleMatch "The CXX compiler identification is MSVC" -Quiet)) {
+            throw "PyArrow extensions were not configured with MSVC; refusing to package the wheel"
+          }
+          if (Select-String -Path $pyLog -Pattern "compiler identification is GNU" -Quiet) {
+            throw "PyArrow build log shows a GNU compiler; refusing to package the wheel"
+          }
+
+          $whl = Get-ChildItem (Join-Path $srcPy "dist\*.whl") | Select-Object -First 1
+          if (-not $whl) { throw "No .whl produced in $srcPy\dist" }
+          $destWhl = Join-Path $env:R8R5_WS "artifact\$($whl.Name)"
+          Copy-Item $whl.FullName $destWhl -Force
+          "R8R5_WHL=$destWhl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Built wheel: $destWhl ($((Get-Item $destWhl).Length) bytes)"
+
+      - name: Inspect wheel PE binaries and enforce fail-closed CRT gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $invJson = Join-Path $env:R8R5_WS "artifact\pe-crt-inventory.json"
+          & $env:R8R5_BUILD_PY -c @"
+          import hashlib, json, os, re, struct, zipfile
+          from email.parser import BytesParser
+          import email.policy
+
+          whl_path = os.environ["R8R5_WHL"]
+          assert os.path.basename(whl_path) == "pyarrow-18.1.0-cp312-cp312-win_amd64.whl", whl_path
+
+          CRT_PATTERNS = [
+              re.compile(r"^(?:vcruntime|msvcp|msvcr|concrt|vccorlib|ucrtbase|mfc|atl)\d*(?:_\d+)?d?(?:-[a-f0-9]+)?\.dll$"),
+              re.compile(r"^api-ms-win-crt-.*\.dll$"),
+          ]
+          ALLOWED_DLLS = {"arrow.dll", "parquet.dll"}
+
+          def parse_pe(data: bytes):
+              assert data[:2] == b"MZ", "Missing MZ"
+              e_lfanew = struct.unpack_from("<I", data, 0x3C)[0]
+              assert data[e_lfanew:e_lfanew+4] == b"PE\x00\x00", "Missing PE"
+              coff = e_lfanew + 4
+              machine, num_sec, _, _, _, opt_size, _ = struct.unpack_from("<HHIIIHH", data, coff)
+              assert machine == 0x8664, f"Non-x64 machine: {hex(machine)}"
+              opt = coff + 20
+              magic = struct.unpack_from("<H", data, opt)[0]
+              assert magic == 0x20B, f"Non-PE32+ magic: {hex(magic)}"
+              lnk_maj, lnk_min = struct.unpack_from("<BB", data, opt + 2)
+              num_rva = struct.unpack_from("<I", data, opt + 108)[0]
+              dd = opt + 112
+              secs = [struct.unpack_from("<IIII", data, opt + opt_size + i*40 + 8) for i in range(num_sec)]
+              def r2o(rva):
+                  for vs, va, rs, ro in secs:
+                      if va <= rva < va + max(vs, rs):
+                          off = ro + (rva - va)
+                          return off if off < len(data) else None
+                  return None
+              def cstr(off):
+                  if off is None: return ""
+                  end = data.find(b"\x00", off)
+                  return data[off:end].decode("ascii", errors="replace") if end != -1 else ""
+              imports = []
+              if num_rva > 1:
+                  irva, _ = struct.unpack_from("<II", data, dd + 8)
+                  if irva:
+                      off = r2o(irva)
+                      while off is not None and off + 20 <= len(data):
+                          ilt, _, _, nr, iat = struct.unpack_from("<IIIII", data, off)
+                          if ilt == 0 and nr == 0 and iat == 0: break
+                          imports.append(cstr(r2o(nr)))
+                          off += 20
+              delay_imports = []
+              if num_rva > 13:
+                  drva, _ = struct.unpack_from("<II", data, dd + 13*8)
+                  if drva:
+                      off = r2o(drva)
+                      while off is not None and off + 32 <= len(data):
+                          attrs, nr, _, _, _, _, _, _ = struct.unpack_from("<IIIIIIII", data, off)
+                          if attrs == 0 and nr == 0: break
+                          delay_imports.append(cstr(r2o(nr)))
+                          off += 32
+              return {"machine": "0x8664", "linker": f"{lnk_maj}.{lnk_min}", "imports": imports, "delay_imports": delay_imports}
+
+          pe_entries = []
+          violations = []
+          with zipfile.ZipFile(whl_path) as zf:
+              meta_name = next(n for n in zf.namelist() if n.endswith(".dist-info/METADATA"))
+              wheel_name = next(n for n in zf.namelist() if n.endswith(".dist-info/WHEEL"))
+              meta = BytesParser(policy=email.policy.default).parsebytes(zf.read(meta_name))
+              wheel_meta = zf.read(wheel_name).decode("utf-8")
+              assert meta["Name"] == "pyarrow" and meta["Version"] == "18.1.0", (meta["Name"], meta["Version"])
+              assert "Tag: cp312-cp312-win_amd64" in wheel_meta, wheel_meta
+
+              for name in sorted(zf.namelist()):
+                  if name.endswith("/"): continue
+                  raw = zf.read(name)
+                  base = os.path.basename(name).lower()
+                  is_pe = base.endswith((".dll", ".pyd", ".exe")) or raw[:2] == b"MZ"
+                  if not is_pe:
+                      continue
+                  if any(p.match(base) for p in CRT_PATTERNS):
+                      violations.append(f"Forbidden bundled Microsoft CRT binary: {name}")
+                  elif base.endswith(".dll") and base not in ALLOWED_DLLS:
+                      violations.append(f"Unexpected/ambiguous bundled DLL: {name}")
+                  info = parse_pe(raw)
+                  info["path"] = name
+                  info["size"] = len(raw)
+                  info["sha256"] = hashlib.sha256(raw).hexdigest()
+                  pe_entries.append(info)
+
+          report = {
+              "wheel": os.path.basename(whl_path),
+              "wheel_sha256": hashlib.sha256(open(whl_path, "rb").read()).hexdigest(),
+              "pe_count": len(pe_entries),
+              "violations": violations,
+              "pe_entries": pe_entries,
+          }
+          with open(r"$invJson", "w", encoding="utf-8") as f:
+              json.dump(report, f, indent=2)
+          print(f"PE binaries inspected: {len(pe_entries)}, Violations: {len(violations)}")
+          if violations:
+              raise SystemExit("\n".join(violations))
+          "@
+
+      - name: Run functional tests in disposable Python 3.12.10 environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $testVenv = Join-Path $env:R8R5_WS "test-venv"
+          python -m venv $testVenv
+          $tpy = Join-Path $testVenv "Scripts\python.exe"
+          & $tpy -m pip install --no-cache-dir --no-deps $env:R8R5_WHL
+
+          $funcLog = Join-Path $env:R8R5_WS "artifact\functional-test.log"
+          $tmpData = Join-Path $env:R8R5_WS "test-data"
+          New-Item -ItemType Directory -Force -Path $tmpData | Out-Null
+
+          & $tpy -c @"
+          import hashlib, os, pyarrow as pa, pyarrow.csv as pacsv, pyarrow.parquet as pq
+          assert pa.__version__ == "18.1.0", pa.__version__
+          csv_bytes = b"id,name,score,active\n1,alpha,10.5,true\n2,,20.25,false\n3,gamma,,true\n"
+          csv_sha = hashlib.sha256(csv_bytes).hexdigest()
+          csv_path = os.path.join(r"$tmpData", "fixture.csv")
+          pq_path = os.path.join(r"$tmpData", "fixture.parquet")
+          with open(csv_path, "wb") as f:
+              f.write(csv_bytes)
+          tbl = pacsv.read_csv(csv_path)
+          pq.write_table(tbl, pq_path)
+          rt = pq.read_table(pq_path)
+          assert rt.column_names == ["id", "name", "score", "active"]
+          assert [str(f.type) for f in rt.schema] == ["int64", "string", "double", "bool"]
+          assert rt.num_rows == 3
+          assert rt.to_pydict() == {
+              "id": [1, 2, 3],
+              "name": ["alpha", None, "gamma"],
+              "score": [10.5, 20.25, None],
+              "active": [True, False, True],
+          }
+          print("PYARROW_VERSION:", pa.__version__)
+          print("FIXTURE_SHA256:", csv_sha)
+          print("ROUNDTRIP_ROWS:", rt.num_rows, "SCHEMA:", [str(f.type) for f in rt.schema])
+          print("FUNCTIONAL_TEST: PASS")
+          "@ | Out-File -FilePath $funcLog -Encoding utf8
+          Get-Content $funcLog
+
+      - name: Generate verification report and artifact SHA256SUMS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artDir = Join-Path $env:R8R5_WS "artifact"
+          $whlItem = Get-Item $env:R8R5_WHL
+          $whlSha = (Get-FileHash $env:R8R5_WHL -Algorithm SHA256).Hash.ToLower()
+          $peInv = Get-Content (Join-Path $artDir "pe-crt-inventory.json") | ConvertFrom-Json
+
+          $reportPath = Join-Path $artDir "verification-report.md"
+          @(
+            "# PyArrow 18.1.0 CRT-Free Windows x64 CI Build Report (R8-R5-CI)"
+            ""
+            "- **Workflow Run:** https://github.com/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
+            "- **Run ID:** $($env:GITHUB_RUN_ID)"
+            "- **Branch:** $($env:GITHUB_REF_NAME)"
+            "- **Commit SHA:** $($env:GITHUB_SHA)"
+            "- **Wheel:** $($whlItem.Name) ($($whlItem.Length) bytes)"
+            "- **Wheel SHA-256:** $whlSha"
+            "- **PE Binaries Inspected:** $($peInv.pe_count)"
+            "- **CRT Violations:** $($peInv.violations.Count)"
+            "- **Functional Test:** PASS (PyArrow 18.1.0 CSV -> Parquet -> read_table)"
+            "- **Note:** Functional tests ran against the GitHub runner's preinstalled VC++ runtime; this does not open the CRT release gate or verify clean end-user machines."
+          ) | Out-File -FilePath $reportPath -Encoding utf8
+
+          Get-ChildItem $artDir -File | Sort-Object Name | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($_.Name)"
+          } | Out-File -FilePath (Join-Path $artDir "SHA256SUMS.txt") -Encoding utf8
+
+      - name: Verify required evidence is complete before upload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artDir = Join-Path $env:R8R5_WS "artifact"
+          $required = @(
+            "pyarrow-18.1.0-cp312-cp312-win_amd64.whl",
+            "source-auth.txt", "toolchain-inventory.txt", "build-dependencies.txt",
+            "cmake-configure.log", "cmake-build.log", "pyarrow-build.log",
+            "pe-crt-inventory.json", "functional-test.log",
+            "verification-report.md", "SHA256SUMS.txt"
+          )
+          $problems = @()
+          foreach ($f in $required) {
+            $p = Join-Path $artDir $f
+            if (-not (Test-Path $p -PathType Leaf)) { $problems += "missing: $f" }
+            elseif ((Get-Item $p).Length -eq 0) { $problems += "empty: $f" }
+          }
+          if ($problems.Count -eq 0) {
+            if (-not (Select-String -Path (Join-Path $artDir "functional-test.log") -SimpleMatch "FUNCTIONAL_TEST: PASS" -Quiet)) {
+              $problems += "functional-test.log has no 'FUNCTIONAL_TEST: PASS' line"
+            }
+            $inv = Get-Content (Join-Path $artDir "pe-crt-inventory.json") -Raw | ConvertFrom-Json
+            if ($inv.violations.Count -ne 0) { $problems += "pe-crt-inventory.json reports $($inv.violations.Count) violation(s)" }
+            if ($inv.pe_count -lt 1) { $problems += "pe-crt-inventory.json inspected no PE binaries" }
+            $sums = @{}
+            foreach ($line in Get-Content (Join-Path $artDir "SHA256SUMS.txt")) {
+              if ($line.TrimStart([char]0xFEFF) -match '^([0-9a-f]{64})  (.+)$') { $sums[$Matches[2]] = $Matches[1] }
+            }
+            foreach ($file in Get-ChildItem $artDir -File) {
+              if ($file.Name -eq "SHA256SUMS.txt") { continue }
+              $h = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+              if (-not $sums.ContainsKey($file.Name)) { $problems += "SHA256SUMS.txt does not list $($file.Name)" }
+              elseif ($sums[$file.Name] -ne $h) { $problems += "SHA256SUMS.txt hash mismatch for $($file.Name)" }
+            }
+          }
+          if ($problems.Count -gt 0) { $problems | ForEach-Object { Write-Host "::error::$_" }; throw "Required evidence incomplete ($($problems.Count) problem(s))" }
+          Write-Host "All $($required.Count) required evidence files present and consistent."
+
+      # Runs on failure too, so diagnostics are kept. A run that did not succeed gets a
+      # distinct artifact name so its partial output cannot be mistaken for a verified build.
+      - name: Upload PyArrow CRT-free build artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pyarrow-18.1.0-cp312-win_amd64-crt-free-${{ github.run_id }}${{ job.status != 'success' && '-INCOMPLETE-diagnostics' || '' }}
+          path: ${{ env.R8R5_WS }}\artifact\**
+          retention-days: 7
+          if-no-files-found: error

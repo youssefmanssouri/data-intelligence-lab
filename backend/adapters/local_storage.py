@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import uuid
 
@@ -50,6 +51,8 @@ WINDOWS_RESERVED_NAMES = frozenset({
 
 # Path length limit guard for Windows portability (MAX_PATH is 260; 250 allows headroom for artifacts)
 MAX_STORAGE_PATH_LENGTH = 250
+# Staging directories older than this are abandoned writes (see sweep_stale_staging).
+STALE_STAGING_SECONDS = 24 * 60 * 60
 
 
 def validate_dataset_id(dataset_id: str) -> str:
@@ -382,6 +385,8 @@ class LocalDatasetStorage:
     - Isolated staging: Staging writes occur in unique directories (.tmp_{uuid}_{dataset_id}).
     - Atomic publication: Staging directories are renamed into place once fully written.
     - Best-effort cleanup: Staging failures clean up without masking primary errors.
+    - Durable publication: both files are fsynced before the publishing rename.
+    - Abandoned staging (process killed mid-write) is swept at startup after 24 hours.
 
     Deferred Controls (to subsequent hardening milestone):
     - OS-level read-only bit enforcement on published files.
@@ -459,7 +464,12 @@ class LocalDatasetStorage:
             # 2. Write Parquet with snappy compression
             data_path = staging_dir / "data.parquet"
             try:
-                pq.write_table(table, data_path, compression="snappy")
+                # Flushed to disk before publication: a power loss after the rename must not
+                # leave a published dataset whose Parquet bytes never reached the disk.
+                with open(data_path, "wb") as data_file:
+                    pq.write_table(table, data_file, compression="snappy")
+                    data_file.flush()
+                    os.fsync(data_file.fileno())
             except Exception:
                 raise StorageError(f"Failed to write Parquet data for dataset '{valid_id}'.") from None
 
@@ -473,6 +483,8 @@ class LocalDatasetStorage:
             try:
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(metadata_dict, f, indent=2, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
             except Exception:
                 raise StorageError(f"Failed to write metadata for dataset '{valid_id}'.") from None
 
@@ -501,6 +513,32 @@ class LocalDatasetStorage:
                     shutil.rmtree(staging_dir, ignore_errors=True)
             except Exception:
                 pass
+
+    def sweep_stale_staging(self, max_age_seconds: float = STALE_STAGING_SECONDS,
+                            now: Optional[float] = None) -> int:
+        """
+        Removes staging directories (".tmp_<uuid>_<id>") abandoned by a process that was
+        killed mid-write; its own cleanup never ran. Only directories older than
+        max_age_seconds are touched, so another process's in-flight write is left alone.
+        Best-effort: never raises. Returns the number removed.
+        """
+        removed = 0
+        current = time.time() if now is None else now
+        try:
+            entries = list(self.datasets_dir.iterdir()) if self.datasets_dir.is_dir() else []
+        except OSError:
+            return 0
+        for entry in entries:
+            try:
+                if not (entry.name.startswith(".tmp_") and entry.is_dir() and not entry.is_symlink()):
+                    continue
+                if current - entry.stat().st_mtime < max_age_seconds:
+                    continue
+                shutil.rmtree(entry)
+                removed += 1
+            except OSError:
+                continue
+        return removed
 
     def dataset_exists(self, dataset_id: str) -> bool:
         """

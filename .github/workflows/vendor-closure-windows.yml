@@ -1,0 +1,113 @@
+name: Vendor closure verification on Windows (cp314)
+
+# Proves the 18-package production closure works on Windows x64 / CPython 3.14:
+# builds the verified wheelhouse (PyArrow only from the CRT-free build-input
+# pre-release), installs it offline into a clean venv, imports the backend,
+# confirms numpy and pandas are absent, and runs the full test suite on Windows.
+
+on:
+  push:
+    branches:
+      - phase/1f3-16-cp314-lock
+  pull_request:
+    paths:
+      - packaging/requirements-vendor.txt
+      - packaging/prepare_wheelhouse.py
+      - .github/workflows/vendor-closure-windows.yml
+
+permissions:
+  contents: read # checkout and download the build-input pre-release
+
+env:
+  PYARROW_RELEASE_TAG: build-input/pyarrow-26.0.1-crt-free-cp314-45981135518
+  PYARROW_WHEEL: pyarrow-26.0.1-cp314-cp314-win_amd64.whl
+  PYARROW_WHEEL_SHA256: c2ebaacbf888bafdba0eb052266fcf9107b5f62f7f4e6e488c1a7f4756847703
+
+jobs:
+  verify-closure:
+    name: Closure install, import and tests (cp314-win_amd64)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.14.10 x64
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.14.10"
+          architecture: "x64"
+
+      - name: Download the CRT-free PyArrow wheel from the build-input pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh release download $env:PYARROW_RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:PYARROW_WHEEL --dir "$env:RUNNER_TEMP\pyarrow"
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)" }
+          $h = (Get-FileHash "$env:RUNNER_TEMP\pyarrow\$env:PYARROW_WHEEL" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "pyarrow wheel SHA-256: $h"
+          if ($h -ne $env:PYARROW_WHEEL_SHA256) { throw "Downloaded wheel does not match the accepted SHA-256" }
+
+      - name: Build the verified wheelhouse
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python packaging/prepare_wheelhouse.py --pyarrow-wheel "$env:RUNNER_TEMP\pyarrow\$env:PYARROW_WHEEL" --output-dir "$env:RUNNER_TEMP\wheelhouse"
+          if ($LASTEXITCODE -ne 0) { throw "prepare_wheelhouse.py failed ($LASTEXITCODE)" }
+          Get-Content "$env:RUNNER_TEMP\wheelhouse\wheelhouse-manifest.json"
+
+      - name: Install the closure offline into a clean venv
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m venv "$env:RUNNER_TEMP\venv"
+          $py = "$env:RUNNER_TEMP\venv\Scripts\python.exe"
+          & $py -m pip install --no-index --find-links "$env:RUNNER_TEMP\wheelhouse" --require-hashes -r packaging/requirements-vendor.txt
+          if ($LASTEXITCODE -ne 0) { throw "offline install failed ($LASTEXITCODE)" }
+          & $py -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "pip check failed ($LASTEXITCODE)" }
+          & $py -m pip freeze
+          "DIL_PY=$py" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Import the backend from the vendored closure only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:STORAGE_DIR = Join-Path $env:RUNNER_TEMP "dil-storage"
+          New-Item -ItemType Directory -Force -Path $env:STORAGE_DIR | Out-Null
+          & $env:DIL_PY -c @"
+          import importlib.util, sys
+          import pyarrow as pa, pyarrow.parquet as pq, fastapi, starlette, uvicorn, pydantic
+          from backend.app import create_app
+          app = create_app()
+          assert sys.version_info[:2] == (3, 14), sys.version
+          assert pa.__version__ == '26.0.1', pa.__version__
+          for absent in ('numpy', 'pandas', 'httpx', 'httpx2'):
+              assert importlib.util.find_spec(absent) is None, absent + ' must not be installed'
+          print('python', sys.version.split()[0], '| pyarrow', pa.__version__, '| fastapi', fastapi.__version__, '| app routes:', len(app.routes))
+          print('CLOSURE_IMPORT: PASS')
+          "@
+          if ($LASTEXITCODE -ne 0) { throw "import check failed ($LASTEXITCODE)" }
+
+      - name: Run the full test suite on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Test-only tools, not part of the shipped closure.
+          & $env:DIL_PY -m pip install "pytest>=8.0.0,<9.0.0" "httpx2>=2.0.0,<3.0.0"  # the ranges requirements.txt uses
+          if ($LASTEXITCODE -ne 0) { throw "test tool install failed ($LASTEXITCODE)" }
+          & $env:DIL_PY -m pytest -q -p no:cacheprovider -rfE --junitxml "$env:RUNNER_TEMP\junit-windows.xml"
+          if ($LASTEXITCODE -ne 0) { throw "pytest failed ($LASTEXITCODE)" }
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vendor-closure-windows-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}\wheelhouse\wheelhouse-manifest.json
+            ${{ runner.temp }}\junit-windows.xml
+          retention-days: 7
+          if-no-files-found: warn
