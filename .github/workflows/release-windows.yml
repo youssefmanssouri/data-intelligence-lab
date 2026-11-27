@@ -26,6 +26,11 @@ on:
         required: false
         default: ""
         type: string
+      publish_draft:
+        description: "Only publish the existing DRAFT v<version> (owner-approved): re-checks the installer's SHA-256 against CHANGELOG.md, builds nothing"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -44,7 +49,7 @@ env:
 jobs:
   build:
     name: Build and re-test the release installer
-    if: ${{ inputs.reuse_run_id == '' }}
+    if: ${{ inputs.reuse_run_id == '' && !inputs.publish_draft }}
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -213,7 +218,7 @@ jobs:
   draft:
     name: Create a DRAFT release (not published)
     needs: build
-    if: ${{ always() && inputs.create_draft && (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.reuse_run_id != '')) }}
+    if: ${{ always() && inputs.create_draft && !inputs.publish_draft && (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.reuse_run_id != '')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -263,3 +268,34 @@ jobs:
           gh release create "$tag" release-out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --draft --title "Data Intelligence Lab ${VERSION}" --notes-file notes.md
           echo "Draft release $tag created; it is NOT published."
+
+  publish:
+    name: Publish the approved draft
+    if: ${{ inputs.publish_draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # publish the draft release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Verify the draft's files, then publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          is_draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          [ "$is_draft" = "true" ] || { echo "::error::$tag is not a draft; nothing to publish"; exit 1; }
+          mkdir check && cd check
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY"
+          tr -d '\r' < SHA256SUMS.txt | sed '1s/^\xEF\xBB\xBF//' | sha256sum -c -
+          setup="DataIntelligenceLab-Setup-${VERSION}.exe"
+          actual=$(sha256sum "$setup" | cut -c1-64)
+          grep -q "$actual" ../CHANGELOG.md || { echo "::error::CHANGELOG.md does not record $setup SHA-256 $actual"; exit 1; }
+          echo "$setup sha256 $actual matches CHANGELOG.md"
+          cd ..
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,url,publishedAt
