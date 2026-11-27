@@ -40,6 +40,23 @@ export type Dataset = Summary & {
   columns: Column[];
   warnings: string[];
 };
+export type Severity = "high" | "medium" | "info";
+export type Insight = {
+  code: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  columns: string[];
+};
+export type Insights = {
+  dataset_id: string;
+  method_version: string;
+  rows_examined: Numeric;
+  sampled: boolean;
+  partial: boolean;
+  truncated: boolean;
+  items: Insight[];
+};
 
 export const REQUEST_TIMEOUT_MS = 120_000;
 export const FILE_CEILING = 200 * 1024 * 1024;
@@ -269,6 +286,39 @@ function dataset(value: unknown): Dataset {
     },
   };
 }
+const SEVERITIES: ReadonlySet<string> = new Set(["high", "medium", "info"]);
+function flag(value: unknown): boolean {
+  if (typeof value !== "boolean") invalid();
+  return value;
+}
+function insights(value: unknown): Insights {
+  const d = object(value);
+  const id = text(d.dataset_id);
+  if (!validDatasetId(id)) invalid();
+  if (!Array.isArray(d.items) || d.items.length > 100) invalid();
+  // Evidence is kept server-side for auditing; only the rendered text is displayed.
+  const items = d.items.map((value): Insight => {
+    const i = object(value);
+    const severity = text(i.severity);
+    if (!SEVERITIES.has(severity)) invalid();
+    return {
+      code: text(i.code),
+      severity: severity as Severity,
+      title: text(i.title),
+      detail: text(i.detail),
+      columns: strings(i.columns),
+    };
+  });
+  return {
+    dataset_id: id,
+    method_version: text(d.method_version),
+    rows_examined: numeric(d.rows_examined, true),
+    sampled: flag(d.sampled),
+    partial: flag(d.partial),
+    truncated: flag(d.truncated),
+    items,
+  };
+}
 async function request(
   path: string,
   init: RequestInit,
@@ -358,6 +408,21 @@ export async function getDataset(
   const d = dataset(
     await request(
       `/api/v1/datasets/${encodeURIComponent(id)}`,
+      { method: "GET" },
+      signal,
+    ),
+  );
+  if (d.dataset_id !== id) invalid();
+  return d;
+}
+export async function getInsights(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Insights> {
+  datasetPath(id);
+  const d = insights(
+    await request(
+      `/api/v1/datasets/${encodeURIComponent(id)}/insights`,
       { method: "GET" },
       signal,
     ),

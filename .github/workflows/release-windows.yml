@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version; must equal backend/version.py (for example 1.0.0)"
+        description: "Release version; must equal backend/version.py (for example 1.1.0)"
         required: true
         type: string
       create_draft:

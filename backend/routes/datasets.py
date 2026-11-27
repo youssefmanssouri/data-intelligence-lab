@@ -58,6 +58,18 @@ def get_dataset(
     return adapter.get_dataset_metadata(dataset_id)
 
 
+@router.get("/{dataset_id}/insights", status_code=status.HTTP_200_OK)
+def get_dataset_insights(
+    dataset_id: str,
+    adapter: IExecutionAdapter = Depends(get_execution_adapter),
+) -> Dict[str, Any]:
+    """
+    Returns rule-based, deterministic insights for a dataset, written in plain language.
+    Computed locally from the stored Parquet data; nothing leaves the machine.
+    """
+    return adapter.get_dataset_insights(dataset_id)
+
+
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dataset(
     dataset_id: str,

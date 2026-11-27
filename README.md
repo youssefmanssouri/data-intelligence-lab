@@ -15,6 +15,10 @@ Captured from the current development build running locally (Next.js frontend + 
 
 ![Data Health Dashboard](docs/screenshots/dashboard.png)
 
+**What this data says** (new in 1.1.0): rule-based, deterministic findings in plain language, computed locally. The same file always gives the same findings. See [how the rules work](docs/INSIGHTS.md).
+
+![Insights panel](docs/screenshots/insights.png)
+
 **Upload**: CSV import with the scoring method explained up front.
 
 ![Upload page](docs/screenshots/upload.png)

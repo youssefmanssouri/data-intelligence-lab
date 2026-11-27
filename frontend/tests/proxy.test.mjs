@@ -132,6 +132,9 @@ test("configuration rejects non-loopback, credentials, alternate schemes and amb
   assert.equal(backendOrigin("http://127.0.0.1:8000"), "http://127.0.0.1:8000");
   assert.equal(backendOrigin("http://[::1]:8000"), "http://[::1]:8000");
   assert.equal(isApiPath("/api/v1/datasets/../x"), false);
+  assert.equal(isApiPath("/api/v1/datasets/ds_1/insights"), true);
+  assert.equal(isApiPath("/api/v1/datasets/ds_1/insights/x"), false);
+  assert.equal(isApiPath("/api/v1/datasets/ds_1/other"), false);
 });
 test("actual proxy forwards first chunk before upload completes and preserves >10 MiB bodies", async () => {
   const boundary = "dil-stream-boundary";

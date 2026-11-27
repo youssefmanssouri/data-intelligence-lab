@@ -6,7 +6,7 @@ This kit checks the installer the way a real user meets it: on a fresh Windows m
 
 | File | Purpose |
 |---|---|
-| `DataIntelligenceLab-Setup-1.0.0.exe` | The installer under test (unsigned build) |
+| `DataIntelligenceLab-Setup-1.1.0.exe` | The installer under test (unsigned build) |
 | `SHA256SUMS` | Hash of the installer, checked by the script |
 | `Verify-DataIntelligenceLab.ps1` | The verification script |
 | `smoke_test_bundle.py`, `build_runtime_bundle.py` | Automated checks, run with the app's own bundled Python after installation |

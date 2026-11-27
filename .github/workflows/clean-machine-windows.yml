@@ -29,7 +29,7 @@ env:
   # From https://nodejs.org/dist/v22.23.5/SHASUMS256.txt
   NODE_ZIP_SHA256: 4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3
   NEXT_TELEMETRY_DISABLED: "1"
-  SETUP_NAME: DataIntelligenceLab-Setup-1.0.0.exe
+  SETUP_NAME: DataIntelligenceLab-Setup-1.1.0.exe
 
 jobs:
   build:

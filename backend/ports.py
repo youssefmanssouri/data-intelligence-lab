@@ -63,6 +63,15 @@ class IExecutionAdapter(Protocol):
         """
         ...
 
+    def get_dataset_insights(self, dataset_id: str) -> Dict[str, Any]:
+        """
+        Computes deterministic, plain-language insights for a stored dataset.
+
+        Raises:
+            InvalidDatasetIdError, DatasetNotFoundError, DatasetCorruptError, StorageError.
+        """
+        ...
+
     def delete_dataset(self, dataset_id: str) -> bool:
         """
         Deletes a dataset and its persistent artifacts.
