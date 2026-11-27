@@ -1,4 +1,4 @@
-name: Release build on Windows (v1.0)
+name: Release build on Windows
 
 # Builds the release installer from the selected ref (normally main) exactly as the
 # verified pipeline does, re-runs the installer lifecycle test on the built file,
@@ -43,6 +43,11 @@ env:
   # From https://nodejs.org/dist/v22.23.5/SHASUMS256.txt
   NODE_ZIP_SHA256: 4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3
   NEXT_TELEMETRY_DISABLED: "1"
+  # The published release that the new installer must upgrade in place (upgrade test).
+  UPGRADE_FROM_TAG: v1.0.0
+  UPGRADE_FROM_VERSION: 1.0.0
+  UPGRADE_FROM_SETUP: DataIntelligenceLab-Setup-1.0.0.exe
+  UPGRADE_FROM_SHA256: 4d1b26af4cc61532a2b008c4dcd9b381f8d0c3aa6e4b05291cd85e68208e1e35
   # SETUP_NAME and RELEASE_TAG are set by the preflight step from the requested version.
 
 
@@ -186,6 +191,21 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\release-out" | Out-Null
           python packaging/test_installer.py --setup "$env:RUNNER_TEMP\dist\$env:SETUP_NAME" --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\release-lifecycle" --evidence "$env:RUNNER_TEMP\release-out\installer-lifecycle.json"
           if ($LASTEXITCODE -ne 0) { throw "installer lifecycle test failed ($LASTEXITCODE)" }
+
+      - name: Upgrade test from the published ${{ env.UPGRADE_FROM_TAG }} installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $old = "$env:RUNNER_TEMP\upgrade-from"
+          New-Item -ItemType Directory -Force -Path $old | Out-Null
+          gh release download $env:UPGRADE_FROM_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:UPGRADE_FROM_SETUP --dir $old
+          if ($LASTEXITCODE -ne 0) { throw "could not download $env:UPGRADE_FROM_SETUP" }
+          $hash = (Get-FileHash (Join-Path $old $env:UPGRADE_FROM_SETUP) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:UPGRADE_FROM_SHA256) { throw "published installer hash $hash does not match the recorded $env:UPGRADE_FROM_SHA256" }
+          python packaging/test_upgrade.py --old-setup (Join-Path $old $env:UPGRADE_FROM_SETUP) --old-version $env:UPGRADE_FROM_VERSION --new-setup "$env:RUNNER_TEMP\dist\$env:SETUP_NAME" --new-version "${{ inputs.version }}" --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\upgrade-test" --evidence "$env:RUNNER_TEMP\release-out\upgrade-test.json"
+          if ($LASTEXITCODE -ne 0) { throw "upgrade test failed ($LASTEXITCODE)" }
 
       - name: Record release hashes
         shell: pwsh
