@@ -32,7 +32,7 @@ Captured from the current development build running locally (Next.js frontend + 
 
 Version 1.0.0 is a local-first Windows desktop release: an installer that bundles its own Python 3.14.10 and Node.js 22.23.5 runtimes, a FastAPI backend and a Next.js frontend, both bound to `127.0.0.1`. It is not yet released. The remaining gates are a run on a clean Windows 11 machine and the release checklist (notes, hashes, go/no-go).
 
-- **Install and use:** [Installation guide](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
+- **Install and use:** [Installation guide](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md) · [Release verification report](docs/VERIFICATION-REPORT-1.0.md) (draft)
 - **Security:** [SECURITY.md](SECURITY.md) lists the controls, the dependency status and the accepted limitations (for example, the installer is not code-signed).
 - **Packaging and verification:** [packaging/README.md](packaging/README.md) (bundle, installer, CRT policy) and [packaging/clean-machine/README.md](packaging/clean-machine/README.md) (clean-machine verification kit).
 - **Automated tests (27 November 2026, `main` at `8473473`):** Linux 1,418 passed, 30 skipped; Windows Server 2022, Python 3.14.10: 1,448 passed. The Windows CI also builds the bundle and installer and tests install, upgrade, uninstall, standard-user installs, a missing VC++ runtime and Ctrl+C shutdown on Server 2022 and 2025. These figures are from CI runs; re-run the suites to check the current state.
