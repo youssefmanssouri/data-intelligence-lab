@@ -1,6 +1,6 @@
 # Data Intelligence Lab 1.0: release verification report
 
-**Status: DRAFT, NOT READY.** Six conditions are evidenced. Condition 3 is an **accepted exception**: the owner decided on 27 November 2026 to release without a Windows 11 client run, so it is verified on Windows Server only. The report is complete once the release installer's hash is recorded, and no release may be published without the owner's explicit approval.
+**Status: READY FOR OWNER APPROVAL.** Six conditions are evidenced. Condition 3 is an **accepted exception**: the owner decided on 27 November 2026 to release without a Windows 11 client run, so it is verified on Windows Server only. The release installer was built and re-tested by release run 46029439983 from `main` `7443cbc`; its hash is recorded below. Publishing requires the owner's explicit approval.
 
 - **Release candidate:** `main` at `8473473`, plus the open pull request #18 (docs, version alignment and readable startup errors).
 - **Supported platform:** Windows 11 x64.
@@ -53,12 +53,18 @@ To be filled in at release time from the final build, which is made by `.github/
 
 | File | Size | SHA-256 | Built from |
 |---|---|---|---|
-| `DataIntelligenceLab-Setup-1.0.0.exe` | — | — | — |
+| `DataIntelligenceLab-Setup-1.0.0.exe` | 102,329,462 bytes | `4d1b26af4cc61532a2b008c4dcd9b381f8d0c3aa6e4b05291cd85e68208e1e35` | `main` `7443cbc` (release run 46029439983) |
 
 ## Go / no-go
 
-**No-go for now**: the release installer has not been built and approved. Condition 3 does not block, because it is an accepted exception, not a pass. To release:
-1. Review this report.
-2. Build the release installer from the final `main` commit.
-3. Record its hash here and in CHANGELOG.md.
-4. Ask the owner to approve publishing.
+**Go, subject to the owner's explicit approval to publish.** Release run 46029439983 (`main` `7443cbc`) passed every step:
+- preflight: `LICENSE` present, version 1.0.0, no existing tag;
+- `Bundle verified: 13162 files match manifest.json`, 0 CRT binaries, `BUNDLE_SMOKE_TEST: PASS`;
+- `INSTALLER_LIFECYCLE_TEST: PASS` on the built installer, including `user-storage-preserved`.
+
+Its artifact `dil-release-1.0.0-7443cbc2b68c26546d0d376ed9132af8d5e7b4f4` holds the installer, `SHA256SUMS.txt`, `release-info.json` and the evidence. Commits after `7443cbc` that change only documentation do not change the installer, which ships none of these files.
+
+To publish, once the owner approves:
+1. Run the release workflow on `main` with `version` 1.0.0, `create_draft` set and `reuse_run_id` 46029439983. That drafts exactly this installer, without rebuilding: it re-checks `SHA256SUMS.txt` and refuses if CHANGELOG.md does not record this installer's hash.
+2. Check the draft.
+3. Publish it.

@@ -145,4 +145,4 @@ Releases are built by `.github/workflows/release-windows.yml`, which is run by h
 - builds the wheelhouse, frontend, bundle and installer with the same pinned steps as the clean-machine workflow, re-verifies the bundle, smoke-tests it, and re-runs the full installer lifecycle test on the built installer;
 - uploads `dil-release-<version>-<commit>`, which holds the installer, `bundle-manifest.json`, `SHA256SUMS.txt`, `release-info.json` (size, SHA-256, commit, run) and the lifecycle evidence.
 
-With `create_draft` set, it also creates a **draft** GitHub release, with the CHANGELOG section as the notes and every file attached. A draft is visible only to maintainers. Publishing it is a separate, deliberate owner action.
+With `create_draft` set, it also creates a **draft** GitHub release, with the CHANGELOG section as the notes and every file attached. With `reuse_run_id` it skips the build and drafts the files of that earlier run, so the published installer is exactly the one whose hash was recorded. It refuses if `CHANGELOG.md` does not contain that hash. A draft is visible only to maintainers. Publishing it is a separate, deliberate owner action.
