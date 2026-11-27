@@ -43,15 +43,15 @@ In scope: **web pages the user visits** (they can reach loopback ports from the 
 
 ---
 
-## 4. Dependency status (26 November 2026)
+## 4. Dependency status (27 November 2026)
 
 | Component | Version | Known advisories | Assessment |
 |---|---|---|---|
-| Python closure (18 packages, `packaging/requirements-vendor.txt`) | as locked | 1: PyArrow 18.1.0, CVE-2026-25087 (GHSA-rgxp-2hwp-jwgg), fixed in 23.0.1 | **Not affected.** The flaw is in Arrow C++ reading IPC *files* with pre-buffering, which the Python bindings do not expose; the app reads and writes only Parquet (`pyarrow.parquet`) and never opens Arrow IPC or Feather data. Upgrade with the next PyArrow rebuild. |
+| Python closure (18 packages, `packaging/requirements-vendor.txt`, cp314-win_amd64) | as locked; PyArrow 26.0.1 (source-built, CRT-free) | 0 (`pip-audit`, PyPI advisory database) | CVE-2026-25087 (GHSA-rgxp-2hwp-jwgg, fixed in PyArrow 23.0.1) no longer applies: the bundle ships 26.0.1. The OSV database was not queried for this check. |
 | Frontend production dependencies (21) | as locked | 0 (`npm audit --omit=dev`) | — |
 | Frontend development tools | as locked | 7 moderate | Build-time only; not shipped. |
 | Node.js runtime | 22.23.5 (security release, 11 Nov 2026) | none known | Maintenance LTS until April 2027. |
-| CPython runtime | 3.12.10 embeddable | **See limitation L1** | — |
+| CPython runtime | 3.14.10 embeddable (latest 3.14 release on python.org; SHA-256 pinned, Sigstore signature verified in CI) | none known | Python 3.14 receives bug-fix releases with Windows embeddable packages; update with each release. |
 
 ---
 
@@ -59,7 +59,7 @@ In scope: **web pages the user visits** (they can reach loopback ports from the 
 
 | # | Limitation | Why / mitigation | Status |
 |---|---|---|---|
-| L1 | **The bundled CPython 3.12.10 lacks later security fixes.** Python 3.12 is in security-only maintenance (3.12.16 is current), and python.org publishes no Windows embeddable package after 3.12.10; 3.13 stopped after 3.13.14. | The app's exposed surface is a loopback API guarded as above, and it does not use the standard-library modules most affected by recent fixes (for example `tarfile`). Moving to CPython 3.14 (embeddable builds still published) needs a CRT-free PyArrow build for cp314 and would also clear the PyArrow advisory. | **Open decision** for the project owner. |
+| L1 | ~~The bundled CPython 3.12.10 lacked later security fixes~~ (3.12 has no Windows embeddable package after 3.12.10). | Resolved by moving the bundle to CPython 3.14.10 with a CRT-free PyArrow 26.0.1 build for cp314 (pre-release `build-input/pyarrow-26.0.1-crt-free-cp314-45981135518`); verified by the bundle, installer, reliability and clean-machine CI runs of 27 November 2026. Residual duty: rebuild with each CPython 3.14 bug-fix release. | **Closed** (27 Nov 2026). |
 | L2 | **Closing the console window ends the services abruptly.** Windows gives a closing console only seconds; the launcher's orderly shutdown runs on Ctrl+C, and on window close the Job Object ends the services. | Dataset writes are atomic and durable, so no partial dataset appears; abandoned staging is swept. The launcher's temporary port files in `%TEMP%` may remain (a few bytes each). | Accepted. |
 | L3 | **Another program running as the same user can impersonate a service** (for example by writing a port file first or binding a port). | Same-user malware is out of scope; it can read the dataset folder directly anyway. | Accepted. |
 | L4 | **The installer is not code-signed.** SmartScreen warns on first run. | Signing is planned for release readiness (Milestone F). | Open. |

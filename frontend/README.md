@@ -23,7 +23,7 @@ npm.cmd run dev
 
 Open <http://127.0.0.1:3000>. Node 22.14+ is required; verified with Node 24.14.0.
 Using `npm.cmd` avoids the machine's PowerShell restriction on `npm.ps1`.
-The existing backend requires its Python 3.12 virtual environment and requirements.
+The existing backend requires a Python 3.12, 3.13 or 3.14 virtual environment with `requirements.txt` installed.
 
 For a production frontend, replace `npm.cmd run dev` with:
 
