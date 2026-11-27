@@ -44,5 +44,5 @@ Answer the questions honestly. A "no" is a useful result.
 
 ## Notes
 
-- The installer is not code-signed yet. If you double-click it, Windows SmartScreen may warn "Windows protected your PC". Choose **More info**, then **Run anyway**. Signing is planned for release readiness.
+- The installer is not code-signed (an accepted limitation, SECURITY.md L4). If you double-click it, Windows SmartScreen may warn "Windows protected your PC". The script checks the installer against `SHA256SUMS` first; then choose **More info**, then **Run anyway**.
 - The script installs to the default location (`%LOCALAPPDATA%\Programs\Data Intelligence Lab`) and removes the app at the end. Apart from the Visual C++ runtime you install yourself, the VM is left as it was, so you can use the snapshot again.

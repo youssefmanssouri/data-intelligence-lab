@@ -24,6 +24,7 @@ from backend.ports import IExecutionAdapter
 from backend.request_guard import LocalRequestGuard
 from backend.routes.datasets import router as datasets_router
 from backend.routes.health import router as health_router
+from backend.version import APP_VERSION
 from core.types import IngestionLimits
 
 
@@ -155,7 +156,7 @@ def create_app(
 
     app = FastAPI(
         title="Data Intelligence Lab",
-        version="0.1.0",
+        version=APP_VERSION,
         description="Local-first data intelligence and statistical analysis engine.",
     )
 
