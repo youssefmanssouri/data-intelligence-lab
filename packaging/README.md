@@ -134,3 +134,15 @@ Data Intelligence Lab packaging enforces this rule:
 - The CPython embeddable package itself ships `vcruntime140.dll` and `vcruntime140_1.dll`; `build_runtime_bundle.py` never extracts them, records them in `manifest.json` as excluded, and the CRT gate would block them if they reappeared. `python.exe` then loads them from the installed Visual C++ Redistributable.
 - `node.exe` links its C runtime statically, and the frontend's native addons (`@next/swc-win32-x64-msvc`, `@img/sharp-win32-x64`) ship no Microsoft CRT file; they import only the Universal CRT (`api-ms-win-crt-*`), which is part of Windows 10/11.
 - Unvendored CRT DLLs placed in the application root are blocked fail-closed by `build_runtime_bundle.py` in release mode unless `--allow-crt-redistribution` is explicitly provided.
+
+---
+
+## 8. Release build
+
+Releases are built by `.github/workflows/release-windows.yml`, which is run by hand: Actions → *Release build on Windows (v1.0)* → *Run workflow* on `main`, with `version` set to the value in `backend/version.py`. It:
+
+- refuses to start without a `LICENSE` file at the repository root (the bundle ships it), if the version differs from `backend/version.py`, or if the tag `v<version>` already exists;
+- builds the wheelhouse, frontend, bundle and installer with the same pinned steps as the clean-machine workflow, re-verifies the bundle, smoke-tests it, and re-runs the full installer lifecycle test on the built installer;
+- uploads `dil-release-<version>-<commit>`, which holds the installer, `bundle-manifest.json`, `SHA256SUMS.txt`, `release-info.json` (size, SHA-256, commit, run) and the lifecycle evidence.
+
+With `create_draft` set, it also creates a **draft** GitHub release, with the CHANGELOG section as the notes and every file attached. A draft is visible only to maintainers. Publishing it is a separate, deliberate owner action.
