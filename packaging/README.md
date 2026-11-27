@@ -94,7 +94,7 @@ Prerequisite: [Inno Setup 6.3 or later](https://jrsoftware.org/isdl.php) (for th
 ```powershell
 ISCC.exe /DBundleDir="$env:TEMP\dil_bundle" /DOutputDir="$env:TEMP\dil_dist" packaging\setup.iss
 ```
-Generated installer: `<OutputDir>\DataIntelligenceLab-Setup-1.0.0.exe` (`OutputDir` defaults to `dist\` at the repository root). `BundleDir` is required and must be a bundle that passed `build_runtime_bundle.py --verify`.
+Generated installer: `<OutputDir>\DataIntelligenceLab-Setup-1.1.0.exe` (`OutputDir` defaults to `dist\` at the repository root). `BundleDir` is required and must be a bundle that passed `build_runtime_bundle.py --verify`.
 
 What the installer does:
 - **Per-user, no administrator rights:** installs to `%LOCALAPPDATA%\Programs\Data Intelligence Lab`. Supported for v1.0: 64-bit **Windows 11**; CI also verifies Windows Server 2022 and 2025. **Windows 10 is not supported** (Microsoft ended its support in October 2025): setup and the launcher still accept Windows 10 version 1703 (build 15063) or later, the technical minimum for the launcher's Job Object handling, but no Windows 10 testing or fixes are offered.
@@ -104,7 +104,7 @@ What the installer does:
 - **Upgrades:** the bundle's `manifest.json` is promoted to `manifest.current.json`, the previous one is kept as `manifest.previous.json`, and files listed only in the previous manifest are deleted (paths are confined to the install folder).
 - **Uninstall:** removes the installed files, the manifests and the Next.js route cache. It never touches `%USERPROFILE%\.data-intelligence-lab\storage`.
 
-Silent installation (for managed deployment): `DataIntelligenceLab-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`. In silent mode every blocking dialog defaults to Cancel, so a missing prerequisite or a running instance ends setup with a non-zero exit code instead of waiting for input.
+Silent installation (for managed deployment): `DataIntelligenceLab-Setup-1.1.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`. In silent mode every blocking dialog defaults to Cancel, so a missing prerequisite or a running instance ends setup with a non-zero exit code instead of waiting for input.
 
 ---
 

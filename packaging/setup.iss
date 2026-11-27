@@ -3,11 +3,11 @@
 ; Implements crash-safe manifest transitions, 3-category process detection, storage preservation,
 ; and a fail-closed Microsoft Visual C++ Redistributable prerequisite check (never downloads it).
 ;
-; Compile:  ISCC.exe /DBundleDir=<staged bundle> [/DOutputDir=<dir>] [/DAppVersion=1.0.0] packaging\setup.iss
+; Compile:  ISCC.exe /DBundleDir=<staged bundle> [/DOutputDir=<dir>] [/DAppVersion=1.1.0] packaging\setup.iss
 
 #define MyAppName "Data Intelligence Lab"
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.1.0"
 #endif
 #define MyAppPublisher "Data Intelligence Lab Project"
 ; "{{" escapes a literal "{" in Inno Setup; "}" needs no escape (a second one would become part of the AppId).

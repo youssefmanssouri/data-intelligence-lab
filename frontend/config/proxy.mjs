@@ -75,7 +75,9 @@ export function isApiPath(path) {
     path === "/health" ||
     path === "/ready" ||
     path === "/api/v1/datasets/upload" ||
-    /^\/api\/v1\/datasets\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(path)
+    /^\/api\/v1\/datasets\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}(?:\/insights)?$/.test(
+      path,
+    )
   );
 }
 

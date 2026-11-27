@@ -218,7 +218,7 @@ def build_manifest(bundle_dir: Path) -> Dict[str, object]:
 
     manifest_entries.sort(key=lambda item: item["path"])
     return {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "file_count": len(manifest_entries),
         "total_bytes": sum(int(e["size"]) for e in manifest_entries),
         "files": manifest_entries,

@@ -133,7 +133,9 @@ test("real proxy rejects declared oversized body before client sends CSV bytes",
   for await (const chunk of res) body += chunk;
   expect(res.statusCode).toBe(413);
   expect(JSON.parse(body).code).toBe("ERR_FILE_SIZE_LIMIT_EXCEEDED");
-  expect(JSON.parse(body).detail).toContain("configured limit (209,715,200 bytes)");
+  expect(JSON.parse(body).detail).toContain(
+    "configured limit (209,715,200 bytes)",
+  );
   expect(req.writableEnded).toBe(false);
   req.destroy();
 });
@@ -169,7 +171,46 @@ test("real proxy enforces default 200 MiB cap during chunked multipart before cl
   await received;
   expect(status).toBe(413);
   expect(JSON.parse(body).code).toBe("ERR_FILE_SIZE_LIMIT_EXCEEDED");
-  expect(JSON.parse(body).detail).toContain("configured limit (209,715,200 bytes)");
+  expect(JSON.parse(body).detail).toContain(
+    "configured limit (209,715,200 bytes)",
+  );
   expect(req.writableEnded).toBe(false);
   req.destroy();
+});
+test("real insights: rule-based findings come from the local backend", async ({
+  page,
+}, testInfo) => {
+  const rows = ["order_id,region,amount,discount,order_date"];
+  for (let i = 0; i < 60; i++) {
+    const region = i % 3 ? "North" : "South";
+    const amount = i === 59 ? 9000 : (region === "North" ? 120 : 35) + (i % 5);
+    const discount = i % 2 ? "" : String(amount / 10);
+    const day = i < 30 ? i + 1 : i + 40;
+    const date = new Date(Date.UTC(2024, 0, day)).toISOString().slice(0, 10);
+    rows.push(`${i + 1},${region},${amount},${discount},${date}`);
+  }
+  await page.goto("/");
+  await page.locator("input[type=file]").setInputFiles({
+    name: "sales.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(rows.join("\n") + "\n"),
+  });
+  await page.getByRole("button", { name: "Create data profile" }).click();
+  await expect(page).toHaveURL(/\/datasets\/ds_[a-f0-9]{16}$/);
+  const panel = page.locator('section[aria-labelledby="insights-title"]');
+  await expect(panel.locator("li").first()).toBeVisible();
+  await expect(panel).toContainText("'discount' is missing 50% of its values");
+  await panel.getByRole("button", { name: /Show all \d+ insights/ }).click();
+  await expect(panel).toContainText("'order_id' is unique in every row");
+  await expect(panel).toContainText("'order_date' has a gap of");
+  await expect(panel).toContainText(
+    "Typical 'amount' is 3.3x higher for 'North' (median 122)",
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await panel.screenshot({ path: testInfo.outputPath("insights-panel.png") });
+  const first = await panel.locator("li").allInnerTexts();
+  await page.reload();
+  await panel.getByRole("button", { name: /Show all \d+ insights/ }).click();
+  // Same file, same rules: the reloaded findings are identical.
+  expect(await panel.locator("li").allInnerTexts()).toEqual(first);
 });

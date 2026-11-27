@@ -48,3 +48,28 @@ export function metadata() {
     warnings: [] as string[],
   };
 }
+export function insights(items: Array<Record<string, unknown>> = []) {
+  return {
+    dataset_id: id,
+    method_version: "1.0",
+    rows_examined: 2,
+    sampled: false,
+    partial: false,
+    truncated: false,
+    items,
+  };
+}
+export function insight(
+  severity: "high" | "medium" | "info",
+  title: string,
+  detail = "Why it matters.",
+) {
+  return {
+    code: "TEST_RULE",
+    severity,
+    title,
+    detail,
+    columns: ["amount"],
+    evidence: { value: 1 },
+  };
+}

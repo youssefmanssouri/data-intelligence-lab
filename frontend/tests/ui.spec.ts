@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { column, id, metadata, summary } from "./fixture";
+import { column, id, insight, insights, metadata, summary } from "./fixture";
 
 const path = `/datasets/${id}`;
 const api = `/api/v1/datasets/${id}`;
@@ -592,4 +592,85 @@ test("B: 1000 columns render in bounded pages with lazy statistics and clipped t
   await expect(page.locator("details dd")).toHaveCount(0);
   await page.getByRole("button", { name: "Previous columns" }).click();
   await expect(page.getByRole("status")).toContainText("Columns 1–25 of 1000");
+});
+test("insights panel lists rule-based findings by severity as safe text", async ({
+  page,
+}) => {
+  await mockMetadata(page);
+  await page.route(`**${api}/insights`, (route) =>
+    route.fulfill({
+      json: insights([
+        insight("high", "'amount' is missing 60% of its values (6 rows)."),
+        insight("medium", "3 rows are exact duplicates (3.0% of the data)."),
+        insight("info", '<img src=x onerror="alert(1)">'),
+      ]),
+    }),
+  );
+  await page.goto(path);
+  const panel = page.locator('section[aria-labelledby="insights-title"]');
+  await expect(
+    panel.getByRole("heading", { name: "What this data says" }),
+  ).toBeVisible();
+  const items = panel.locator("li");
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toContainText("Important");
+  await expect(items.nth(0)).toContainText("missing 60% of its values");
+  await expect(items.nth(1)).toContainText("Worth checking");
+  await expect(items.nth(2)).toContainText("Good to know");
+  await expect(items.nth(2)).toContainText('<img src=x onerror="alert(1)">');
+  await expect(panel.locator("img")).toHaveCount(0);
+  await expect(panel).toContainText("relationships are not causes");
+});
+test("long insight lists are collapsed and expandable", async ({ page }) => {
+  await mockMetadata(page);
+  await page.route(`**${api}/insights`, (route) =>
+    route.fulfill({
+      json: {
+        ...insights(
+          Array.from({ length: 12 }, (_, i) =>
+            insight("info", `Finding ${i + 1}`),
+          ),
+        ),
+        sampled: true,
+        rows_examined: 20000,
+      },
+    }),
+  );
+  await page.goto(path);
+  const panel = page.locator('section[aria-labelledby="insights-title"]');
+  await expect(panel.locator("li")).toHaveCount(8);
+  await expect(panel).toContainText("use 20000 evenly spaced rows");
+  await panel.getByRole("button", { name: "Show all 12 insights" }).click();
+  await expect(panel.locator("li")).toHaveCount(12);
+  await panel.getByRole("button", { name: "Show fewer insights" }).click();
+  await expect(panel.locator("li")).toHaveCount(8);
+});
+test("insight failures and invalid insight responses never break the dashboard", async ({
+  page,
+}) => {
+  await mockMetadata(page);
+  await page.route(`**${api}/insights`, (route) =>
+    route.fulfill({ json: { ...insights(), items: [{ severity: "fatal" }] } }),
+  );
+  await page.goto(path);
+  const panel = page.locator('section[aria-labelledby="insights-title"]');
+  await expect(panel).toContainText("Insights are unavailable right now");
+  await expect(
+    page.getByRole("heading", { name: "Data Health Dashboard" }),
+  ).toBeVisible();
+  await expect(
+    page.locator('section[aria-labelledby="missing-title"]'),
+  ).toBeVisible();
+});
+test("an empty insight list says so without implying the data is correct", async ({
+  page,
+}) => {
+  await mockMetadata(page);
+  await page.route(`**${api}/insights`, (route) =>
+    route.fulfill({ json: insights([]) }),
+  );
+  await page.goto(path);
+  await expect(
+    page.locator('section[aria-labelledby="insights-title"]'),
+  ).toContainText("No notable patterns were found");
 });
