@@ -7,6 +7,9 @@ name: Installer build and lifecycle test on Windows (Milestone C)
 # gate (test build with VCMinMinor=99). See packaging/test_installer.py.
 
 on:
+  # Manual run from main (Actions tab > Run workflow), e.g. to build a release-candidate
+  # kit from exactly the merged code. Offered only for workflows on the default branch.
+  workflow_dispatch:
   push:
     branches:
       - phase/1f3-11-installer

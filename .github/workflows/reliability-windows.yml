@@ -7,6 +7,9 @@ name: Reliability on Windows (Milestone E)
 # uploaded dataset again.
 
 on:
+  # Manual run from main (Actions tab > Run workflow), e.g. to build a release-candidate
+  # kit from exactly the merged code. Offered only for workflows on the default branch.
+  workflow_dispatch:
   push:
     branches:
       - phase/1f3-13-reliability-security
