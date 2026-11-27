@@ -28,11 +28,11 @@ Captured from the current development build running locally (Next.js frontend + 
 
 ---
 
-## Status: v1.0 release candidate (Windows 11)
+## Status: v1.0.0 released (Windows 11)
 
-Version 1.0.0 is a local-first Windows desktop release: an installer that bundles its own Python 3.14.10 and Node.js 22.23.5 runtimes, a FastAPI backend and a Next.js frontend, both bound to `127.0.0.1`. It is not yet released. It was verified on Windows Server 2022 and 2025 in CI; a Windows 11 client run was skipped by the owner's decision and is recorded as an accepted exception. What remains is the license choice, the final release build and its hash, and the owner's approval to publish.
+Version 1.0.0 is a local-first Windows release, published on 27 November 2026: **[download it from GitHub Releases](https://github.com/youssefmanssouri/data-intelligence-lab/releases/tag/v1.0.0)**. The installer bundles its own Python 3.14.10 and Node.js 22.23.5 runtimes, a FastAPI backend and a Next.js frontend, both bound to `127.0.0.1`. It was verified on Windows Server 2022 and 2025 in CI; a Windows 11 client run was skipped by the owner's decision and is recorded as an accepted exception. See the release notes for the installer's SHA-256 and the known limitations.
 
-- **Install and use:** [Installation guide](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md) · [Release verification report](docs/VERIFICATION-REPORT-1.0.md) (draft)
+- **Install and use:** [Installation guide](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md) · [Release verification report](docs/VERIFICATION-REPORT-1.0.md)
 - **Security:** [SECURITY.md](SECURITY.md) lists the controls, the dependency status and the accepted limitations (for example, the installer is not code-signed).
 - **Packaging and verification:** [packaging/README.md](packaging/README.md) (bundle, installer, CRT policy) and [packaging/clean-machine/README.md](packaging/clean-machine/README.md) (clean-machine verification kit).
 - **Automated tests (27 November 2026, `main` at `8473473`):** Linux 1,418 passed, 30 skipped; Windows Server 2022, Python 3.14.10: 1,448 passed. The Windows CI also builds the bundle and installer and tests install, upgrade, uninstall, standard-user installs, a missing VC++ runtime and Ctrl+C shutdown on Server 2022 and 2025. These figures are from CI runs; re-run the suites to check the current state.

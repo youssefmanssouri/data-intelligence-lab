@@ -1,6 +1,6 @@
 # Data Intelligence Lab 1.0: release verification report
 
-**Status: READY FOR OWNER APPROVAL.** Six conditions are evidenced. Condition 3 is an **accepted exception**: the owner decided on 27 November 2026 to release without a Windows 11 client run, so it is verified on Windows Server only. The release installer was built and re-tested by release run 46029439983 from `main` `7443cbc`; its hash is recorded below. Publishing requires the owner's explicit approval.
+**Status: RELEASED.** v1.0.0 was published on 27 November 2026 with the owner's approval: <https://github.com/youssefmanssouri/data-intelligence-lab/releases/tag/v1.0.0>. Six conditions are evidenced. Condition 3 is an **accepted exception**: the owner decided to release without a Windows 11 client run, so it is verified on Windows Server only. GitHub's SHA-256 digest of the published installer matches the hash recorded below.
 
 - **Release candidate:** `main` at `8473473`, plus the open pull request #18 (docs, version alignment and readable startup errors).
 - **Supported platform:** Windows 11 x64.
@@ -21,7 +21,7 @@ All evidence below comes from GitHub Actions runs on this repository. Results we
 | 4 | Verified data preservation and lifecycle behaviour | **Evidenced (CI)** | Run 46016934380: `user-storage-preserved`, `datasets-preserved` and `install-refused-while-running` all PASS; reinstall removes obsolete files and keeps outside files. Reliability run 46016939702: Ctrl+C stop with exit 0, ports closed, no processes left, and the dataset served again after restart (`LIFECYCLE_TEST: PASS`, Server 2022 and 2025). Missing VC++: setup and launcher refuse safely and write no data (`MISSING_VC_RUNTIME_TEST: PASS`) |
 | 5 | Passing required tests | **Evidenced** | PR #16 CI run 46013958360: Linux, Python 3.12/3.13/3.14 (3.14: 1,418 passed, 30 skipped); Windows 3.14.10: 1,448 passed; Windows 3.12 passed; frontend checks passed. Run 46016939702 on `main`: Windows 3.14.10, 1,448 passed. PR #18 adds tests; its CI results replace these once it merges |
 | 6 | Accurate documentation | **Drafted, owner review needed** | [INSTALL.md](INSTALL.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md), [CHANGELOG.md](../CHANGELOG.md), [SECURITY.md](../SECURITY.md), [packaging/README.md](../packaging/README.md), README status. Outside this repository: the website's "Windows desktop application" wording is unreviewed |
-| 7 | A complete release verification report | **This document (draft)** | Complete when the release installer's hash, size and commit are filled in |
+| 7 | A complete release verification report | **Evidenced** | This document, with the published installer's hash, size and build commit |
 
 ## Supply chain
 
@@ -49,7 +49,7 @@ Not yet tested:
 
 ## Release files
 
-To be filled in at release time from the final build, which is made by `.github/workflows/release-windows.yml`. That workflow builds from the chosen ref, re-tests the installer, and writes `SHA256SUMS.txt` and `release-info.json`: the installer's SHA-256, its size and the commit it was built from. It refuses to run without a `LICENSE`. At most it creates a draft release; publishing is a separate step that needs the owner's approval.
+Built by `.github/workflows/release-windows.yml`, which re-tests the installer and writes `SHA256SUMS.txt` and `release-info.json`. Every file below is attached to the v1.0.0 release.
 
 | File | Size | SHA-256 | Built from |
 |---|---|---|---|
@@ -57,14 +57,11 @@ To be filled in at release time from the final build, which is made by `.github/
 
 ## Go / no-go
 
-**Go, subject to the owner's explicit approval to publish.** Release run 46029439983 (`main` `7443cbc`) passed every step:
-- preflight: `LICENSE` present, version 1.0.0, no existing tag;
+**Go: released.** Release run 46029439983 (`main` `7443cbc`) built and re-tested the installer:
+- preflight passed: `LICENSE` present, version 1.0.0, no existing tag;
 - `Bundle verified: 13162 files match manifest.json`, 0 CRT binaries, `BUNDLE_SMOKE_TEST: PASS`;
 - `INSTALLER_LIFECYCLE_TEST: PASS` on the built installer, including `user-storage-preserved`.
 
-Its artifact `dil-release-1.0.0-7443cbc2b68c26546d0d376ed9132af8d5e7b4f4` holds the installer, `SHA256SUMS.txt`, `release-info.json` and the evidence. Commits after `7443cbc` that change only documentation do not change the installer, which ships none of these files.
+Run 46031686837 then created the draft from that run's files without rebuilding. It re-checked every file against `SHA256SUMS.txt` and confirmed that CHANGELOG.md records the installer's hash. After the owner approved publishing, the release workflow's publish step made the draft public on 27 November 2026 at 16:20 UTC as `v1.0.0` (tag on `main` `383b833`).
 
-To publish, once the owner approves:
-1. Run the release workflow on `main` with `version` 1.0.0, `create_draft` set and `reuse_run_id` 46029439983. That drafts exactly this installer, without rebuilding: it re-checks `SHA256SUMS.txt` and refuses if CHANGELOG.md does not record this installer's hash.
-2. Check the draft.
-3. Publish it.
+GitHub reports SHA-256 `4d1b26af4cc61532a2b008c4dcd9b381f8d0c3aa6e4b05291cd85e68208e1e35` for the published installer, the same as recorded above.
