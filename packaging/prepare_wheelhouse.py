@@ -2,7 +2,7 @@
 Data Intelligence Lab v1.0 - Verified Wheelhouse Preparation
 
 Builds the offline wheelhouse that the runtime bundle installs from, for
-CPython 3.12 on 64-bit Windows, from packaging/requirements-vendor.txt:
+CPython 3.14 on 64-bit Windows, from packaging/requirements-vendor.txt:
 
 1. Every package except pyarrow is downloaded from PyPI with --require-hashes.
 2. pyarrow is never downloaded. It must be supplied as a local file (the
@@ -41,12 +41,16 @@ from build_runtime_bundle import CRT_DLL_NAMES, CRT_PREFIXES, compute_sha256  # 
 
 LOCK_PATH = _HERE / "requirements-vendor.txt"
 LOCAL_ONLY_PACKAGE = "pyarrow"
+# The interpreter the wheelhouse is for: the bundled CPython embeddable runtime.
+TARGET_PYTHON_VERSION = "3.14"
+TARGET_ABI = "cp314"
+TARGET = f"{TARGET_ABI}-win_amd64"
 TARGET_PIP_ARGS = (
     "--only-binary=:all:",
     "--platform", "win_amd64",
-    "--python-version", "3.12",
+    "--python-version", TARGET_PYTHON_VERSION,
     "--implementation", "cp",
-    "--abi", "cp312",
+    "--abi", TARGET_ABI,
 )
 # Additional Microsoft runtime files that must never be bundled (beyond the bundler's list).
 EXTRA_CRT_PREFIXES = ("api-ms-win-crt-", "ucrtbase", "concrt140", "vccorlib140", "msvcr1")
@@ -81,8 +85,8 @@ def parse_lock(text: str) -> Dict[str, Tuple[str, str]]:
 
 
 def verify_local_wheel(path: Path, version: str, expected_sha256: str) -> None:
-    """The local pyarrow wheel must be the exact pinned file for cp312-win_amd64."""
-    expected_name = f"{LOCAL_ONLY_PACKAGE}-{version}-cp312-cp312-win_amd64.whl"
+    """The local pyarrow wheel must be the exact pinned file for the target (cp314-win_amd64)."""
+    expected_name = f"{LOCAL_ONLY_PACKAGE}-{version}-{TARGET_ABI}-{TARGET_ABI}-win_amd64.whl"
     if not path.is_file():
         raise WheelhouseError(f"{LOCAL_ONLY_PACKAGE} wheel not found: {path}")
     if path.name != expected_name:
@@ -163,7 +167,7 @@ def prepare_wheelhouse(pyarrow_wheel: Path, output_dir: Path, lock_path: Path = 
 
     # 5. Manifest.
     manifest = {
-        "target": "cp312-win_amd64",
+        "target": TARGET,
         "lock": lock_path.name,
         "lock_sha256": compute_sha256(lock_path),
         "wheel_count": len(wheels),
