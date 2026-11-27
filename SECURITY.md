@@ -65,6 +65,7 @@ In scope: **web pages the user visits** (they can reach loopback ports from the 
 | L4 | **The installer is not code-signed.** Windows cannot verify the publisher, and SmartScreen warns on first run. | No signing certificate is used for this project (owner decision, 27 Nov 2026). Users verify the installer against the SHA-256 published with each release before running it ([docs/INSTALL.md](docs/INSTALL.md), step 3). | Accepted. |
 | L5 | **No orphan-process guarantee beyond the Job Object.** If Windows fails to apply kill-on-close (not observed in testing), services could outlive the launcher. | CI checks that both ports close and no process remains after the launcher is killed or stopped. | Accepted; no zero-orphan claim is made. |
 | L6 | **Datasets are not encrypted at rest.** | They are protected by the Windows account's file permissions, like the user's other documents. | Accepted for v1.0. |
+| L7 | **Not tested on a Windows 11 client.** Verification ran on Windows Server 2022 and 2025 runners, which have development tools preinstalled. | Install, lifecycle, standard-user and missing-VC++ behaviour are verified there; SmartScreen and consumer Defender interaction on Windows 11 are not. | Accepted for v1.0 (owner decision, 27 Nov 2026). |
 
 ---
 
