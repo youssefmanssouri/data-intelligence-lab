@@ -147,6 +147,8 @@ Data Intelligence Lab/
 ├── docs/                  # Installation, troubleshooting, product and architecture documents
 ├── .github/workflows/     # CI: tests, CRT-free PyArrow build, bundle, installer, clean-machine, reliability
 ├── CHANGELOG.md           # Release notes
+├── LICENSE                # Apache License 2.0
+├── NOTICE                 # Copyright and third-party notice
 ├── README.md              # Project overview and development setup
 └── SECURITY.md            # Security controls, dependency status and limitations
 ```
@@ -155,4 +157,4 @@ Data Intelligence Lab/
 
 ## License
 
-Open-source license to be specified upon first public release.
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution and the third-party components the installer redistributes.
