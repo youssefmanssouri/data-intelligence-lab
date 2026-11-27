@@ -1,6 +1,6 @@
-# Data Intelligence Lab v1.0 - Authoritative Production Dependencies (Windows x64 / CPython 3.12)
+# Data Intelligence Lab v1.0 - Authoritative Production Dependencies (Windows x64 / CPython 3.14)
 # Fully pinned dependency closure with strict cryptographic SHA-256 hashes for reproducible vendoring.
-# Each hash is the published PyPI SHA-256 of the one wheel pip selects for cp312-win_amd64.
+# Each hash is the published PyPI SHA-256 of the one wheel pip selects for cp314-win_amd64.
 # Closure = what production code imports (fastapi, starlette, uvicorn, python-multipart, pyarrow)
 # plus their required dependencies, and tzdata (see its entry). pandas, numpy (via pandas),
 # python-dateutil, pytz, six, httpx, httpcore and certifi are not used by production code and are
@@ -35,18 +35,19 @@ idna==3.20 \
 opentelemetry-api==1.45.2 \
     --hash=sha256:2cbd737377e710ee740d261c94e93fa0f08e6d037c18f17513cc0a2d94479a34
 
-# Source-built, CRT-free wheel (not on PyPI): MSVC /MD, no bundled Microsoft CRT. Accepted from
-# R8-R5-CI run 45765026782 and published as the pre-release
-# build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782. packaging/prepare_wheelhouse.py takes it
+# Source-built, CRT-free wheel (not on PyPI): MSVC 14.44 /MD, no bundled Microsoft CRT. Accepted
+# from the pyarrow26-crt-free-cp314 run 45981135518 and published as the pre-release
+# build-input/pyarrow-26.0.1-crt-free-cp314-45981135518. packaging/prepare_wheelhouse.py takes it
 # from a local file; the PyPI wheel (which bundles pyarrow/msvcp140.dll) cannot match this hash.
-pyarrow==18.1.0 \
-    --hash=sha256:00d2f53ae4e4e0edae7b73776378ae33d21704fcfbc22fe245538be0202a7840
+# 26.0.1 includes the fix for CVE-2026-25087 (fixed in 23.0.1).
+pyarrow==26.0.1 \
+    --hash=sha256:c2ebaacbf888bafdba0eb052266fcf9107b5f62f7f4e6e488c1a7f4756847703
 
 pydantic==2.14.1 \
     --hash=sha256:9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454
 
 pydantic-core==2.50.1 \
-    --hash=sha256:132529c83901437ff642f585216831bf5fd7a91df66829907e155192ead62498
+    --hash=sha256:d32f3acc081cc3923386d88f422cde8892335e95f034e0104bb4cf9310d9915f
 
 python-multipart==0.0.32 \
     --hash=sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23

@@ -44,12 +44,12 @@ Data Intelligence Lab v1.0 packages a completely offline, self-contained desktop
 
 ## 3. Dependency Vendoring & Cryptographic Integrity
 
-`packaging/requirements-vendor.txt` locks the production closure for CPython 3.12 on Windows x64: 18 packages, each pinned to the SHA-256 of the one wheel used. It contains what production code imports (FastAPI, Starlette, Uvicorn, python-multipart, PyArrow), their required dependencies, and `tzdata`: Windows has no OS time zone database, and reading timezone-aware Parquet data (stored as `"UTC"` for a zero offset) resolves the zone through Python's `zoneinfo`. NumPy and pandas are not used and are not vendored.
+`packaging/requirements-vendor.txt` locks the production closure for CPython 3.14 on Windows x64: 18 packages, each pinned to the SHA-256 of the one wheel used. It contains what production code imports (FastAPI, Starlette, Uvicorn, python-multipart, PyArrow), their required dependencies, and `tzdata`: Windows has no OS time zone database, and reading timezone-aware Parquet data (stored as `"UTC"` for a zero offset) resolves the zone through Python's `zoneinfo`. NumPy and pandas are not used and are not vendored.
 
-**PyArrow is not taken from PyPI.** The PyPI wheel bundles `pyarrow/msvcp140.dll` (Microsoft CRT). The lock pins the source-built, CRT-free wheel instead (SHA-256 `00d2f53ae4e4e0edae7b73776378ae33d21704fcfbc22fe245538be0202a7840`), built by the R8-R5-CI workflow (run 45765026782) and published with its evidence as the pre-release `build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782`. Download that wheel (the repository is private, so use an authenticated browser or `gh release download`), then build the wheelhouse:
+**PyArrow is not taken from PyPI.** The PyPI wheel bundles `pyarrow/msvcp140.dll` (Microsoft CRT). The lock pins the source-built, CRT-free wheel instead (PyArrow 26.0.1, SHA-256 `c2ebaacbf888bafdba0eb052266fcf9107b5f62f7f4e6e488c1a7f4756847703`), built with MSVC toolset 14.44 by the `pyarrow26-crt-free-cp314` workflow (run 45981135518) and published with its evidence as the pre-release `build-input/pyarrow-26.0.1-crt-free-cp314-45981135518`. Download that wheel (the repository is private, so use an authenticated browser or `gh release download`), then build the wheelhouse:
 
 ```powershell
-python packaging/prepare_wheelhouse.py --pyarrow-wheel <path>\pyarrow-18.1.0-cp312-cp312-win_amd64.whl --output-dir <EMPTY_DIR>
+python packaging/prepare_wheelhouse.py --pyarrow-wheel <path>\pyarrow-26.0.1-cp314-cp314-win_amd64.whl --output-dir <EMPTY_DIR>
 ```
 
 The script fails closed. It downloads the other 17 wheels from PyPI with `--require-hashes`, copies PyArrow only from the local file after checking its hash against the lock, resolves the whole lock offline from the wheelhouse (`--no-index --require-hashes`) to prove the closure is complete, rejects any wheel that bundles a Microsoft CRT file, and writes `wheelhouse-manifest.json`.
