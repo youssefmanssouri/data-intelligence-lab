@@ -1,0 +1,10 @@
+Data Intelligence Lab
+Copyright 2026 Youssef Manssouri
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The Windows installer also redistributes third-party components under their own
+licenses, including CPython (Python Software Foundation License), Node.js (MIT),
+Apache Arrow / PyArrow (Apache License 2.0) and the Python and npm packages listed
+in packaging/requirements-vendor.txt and frontend/package-lock.json. Their license
+files are installed alongside them.

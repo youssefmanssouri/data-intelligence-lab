@@ -47,6 +47,11 @@ NODE_EXE_URL = f"https://nodejs.org/dist/v{NODE_VERSION}/win-x64/node.exe"
 # Node 22 is the major CI tests on and satisfies frontend/package.json "engines" (>=22.14.0);
 # node.exe links its C runtime statically and imports no Microsoft CRT DLL.
 NODE_EXE_SHA256 = "247e9693d316da9857e44990e5e11709f596f18112251b8026ec6eed80bdf38a"
+# Node.js's MIT license (with its bundled dependencies' notices) must travel with node.exe.
+# Pinned to the v22.23.5 tag; identical (after CRLF normalization) to the LICENSE inside the
+# official node-v22.23.5-win-x64.zip, whose SHA-256 is NODE_ZIP_SHA256 in the CI workflows.
+NODE_LICENSE_URL = f"https://raw.githubusercontent.com/nodejs/node/v{NODE_VERSION}/LICENSE"
+NODE_LICENSE_SHA256 = "c738ae413cf561f174e34f6961f8ca458aae2369a73640dda6234c629b98bcc4"
 
 # The embeddable package ships these two Microsoft runtime DLLs. They are never staged:
 # redistribution is not authorized, and the VC++ 2015-2022 Redistributable (x64) is a
@@ -532,7 +537,7 @@ def stage_bundle(
         if not src_path.is_dir():
             raise BundleError(f"Application package missing: {src_path}")
         shutil.copytree(src_path, output_dir / src_dir, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    for f_name in ("launcher.py", "LICENSE"):
+    for f_name in ("launcher.py", "LICENSE", "NOTICE"):
         f_path = repo_root / f_name
         if f_path.is_file():
             shutil.copy2(f_path, output_dir / f_name)
@@ -565,6 +570,10 @@ def stage_bundle(
         node_dest.write_text("# development placeholder: not a Node.js runtime", encoding="utf-8")
     if release and not verify_file_hash(node_dest, NODE_EXE_SHA256):
         raise BundleError("Staged node.exe does not match the pinned SHA-256")
+    if not skip_download:
+        cached_license = cache / f"node-v{NODE_VERSION}-LICENSE"
+        download_with_hash_check(NODE_LICENSE_URL, cached_license, NODE_LICENSE_SHA256)
+        shutil.copy2(cached_license, node_dest.parent / "LICENSE")
     runtime_info["node"] = {"version": NODE_VERSION, "sha256": NODE_EXE_SHA256}
 
     # 4. Python embeddable runtime (hash-pinned, without Microsoft CRT DLLs)

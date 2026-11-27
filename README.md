@@ -30,7 +30,7 @@ Captured from the current development build running locally (Next.js frontend + 
 
 ## Status: v1.0 release candidate (Windows 11)
 
-Version 1.0.0 is a local-first Windows desktop release: an installer that bundles its own Python 3.14.10 and Node.js 22.23.5 runtimes, a FastAPI backend and a Next.js frontend, both bound to `127.0.0.1`. It is not yet released. The remaining gates are a run on a clean Windows 11 machine and the release checklist (notes, hashes, go/no-go).
+Version 1.0.0 is a local-first Windows desktop release: an installer that bundles its own Python 3.14.10 and Node.js 22.23.5 runtimes, a FastAPI backend and a Next.js frontend, both bound to `127.0.0.1`. It is not yet released. It was verified on Windows Server 2022 and 2025 in CI; a Windows 11 client run was skipped by the owner's decision and is recorded as an accepted exception. What remains is the license choice, the final release build and its hash, and the owner's approval to publish.
 
 - **Install and use:** [Installation guide](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md) · [Release verification report](docs/VERIFICATION-REPORT-1.0.md) (draft)
 - **Security:** [SECURITY.md](SECURITY.md) lists the controls, the dependency status and the accepted limitations (for example, the installer is not code-signed).
@@ -147,6 +147,8 @@ Data Intelligence Lab/
 ├── docs/                  # Installation, troubleshooting, product and architecture documents
 ├── .github/workflows/     # CI: tests, CRT-free PyArrow build, bundle, installer, clean-machine, reliability
 ├── CHANGELOG.md           # Release notes
+├── LICENSE                # Apache License 2.0
+├── NOTICE                 # Copyright and third-party notice
 ├── README.md              # Project overview and development setup
 └── SECURITY.md            # Security controls, dependency status and limitations
 ```
@@ -155,4 +157,4 @@ Data Intelligence Lab/
 
 ## License
 
-Open-source license to be specified upon first public release.
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution and the third-party components the installer redistributes.
