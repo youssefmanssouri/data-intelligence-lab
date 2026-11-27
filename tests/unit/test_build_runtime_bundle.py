@@ -436,8 +436,9 @@ def test_repository_license_is_apache_2_and_ships_with_the_bundle() -> None:
     root = Path(b.__file__).resolve().parent.parent
     text = (root / "LICENSE").read_text(encoding="utf-8")
     assert "Apache License" in text and "Version 2.0, January 2004" in text
-    # SHA-256 of https://www.apache.org/licenses/LICENSE-2.0.txt
-    assert hashlib.sha256((root / "LICENSE").read_bytes()).hexdigest() == \
+    # SHA-256 of https://www.apache.org/licenses/LICENSE-2.0.txt (LF line endings; a Windows
+    # checkout may convert them to CRLF, which does not change the text).
+    assert hashlib.sha256((root / "LICENSE").read_bytes().replace(b"\r\n", b"\n")).hexdigest() == \
         "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
     assert (root / "NOTICE").is_file()
     assert '"LICENSE", "NOTICE"' in Path(b.__file__).read_text(encoding="utf-8")
