@@ -21,7 +21,7 @@ The rules, thresholds and limits are documented in [docs/INSIGHTS.md](docs/INSIG
 - Tests added: 31 unit and API tests for the rules, 4 mocked UI tests and 1 end-to-end test against the real backend.
 
 ### Unchanged
-Platform, requirements, security controls and known limitations are the same as in 1.0.0 (below). Install 1.1.0 over 1.0.0; your datasets are kept.
+Platform, requirements, security controls and known limitations are the same as in 1.0.0 (below). Close the app and run the 1.1.0 installer over 1.0.0. Datasets are stored outside the application folder, so setup does not touch them. Reinstalling over the same version is tested in CI; an upgrade from the published 1.0.0 installer has not been tested end to end.
 
 ### Release files
 | File | SHA-256 |
