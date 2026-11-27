@@ -1,6 +1,6 @@
 # Release notes
 
-## 1.0.0 — unreleased (release candidate)
+## 1.0.0 — release candidate (built 27 November 2026, not yet published)
 
 The first release of Data Intelligence Lab: a local-first Windows application that turns CSV files into profiled, quality-scored datasets without sending anything off your PC.
 
@@ -37,6 +37,6 @@ Tested in Windows CI on Server 2022 and 2025, as administrator and as a standard
 ### Release files
 | File | SHA-256 |
 |---|---|
-| `DataIntelligenceLab-Setup-1.0.0.exe` | *published with the release* |
+| `DataIntelligenceLab-Setup-1.0.0.exe` (102,329,462 bytes) | `4d1b26af4cc61532a2b008c4dcd9b381f8d0c3aa6e4b05291cd85e68208e1e35` |
 
 See [Installation](docs/INSTALL.md) and [Troubleshooting](docs/TROUBLESHOOTING.md).
