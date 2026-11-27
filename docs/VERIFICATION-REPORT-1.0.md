@@ -1,6 +1,6 @@
 # Data Intelligence Lab 1.0: release verification report
 
-**Status: DRAFT, NOT READY.** Condition 3 (clean Windows installation and execution) needs the Windows 11 VM run. No release may be published until every condition below shows *Evidenced* and the owner approves.
+**Status: DRAFT, NOT READY.** Six conditions are evidenced. Condition 3 is an **accepted exception**: the owner decided on 27 November 2026 to release without a Windows 11 client run, so it is verified on Windows Server only. The report is complete once the release installer's hash is recorded, and no release may be published without the owner's explicit approval.
 
 - **Release candidate:** `main` at `8473473`, plus the open pull request #18 (docs, version alignment and readable startup errors).
 - **Supported platform:** Windows 11 x64.
@@ -17,11 +17,11 @@ All evidence below comes from GitHub Actions runs on this repository. Results we
 |---|---|---|---|
 | 1 | A verified standalone runtime | **Evidenced** | Bundle run 46007600662, and every bundle built from `main` since (for example run 46016934380): `Bundle verified: 13157 files match manifest.json`, CRT gate 0 CRT binaries of 49 scanned, `EMBED_SIGSTORE: PASS` for CPython 3.14.10 (SHA-256 `90905e64…4159`), Node.js 22.23.5 SHA-256 pinned, `BUNDLE_SMOKE_TEST: PASS` with `PATH` reduced to System32 |
 | 2 | A successfully compiled installer | **Evidenced** | Installer run 46007600684 and clean-machine run 46016934380 (built from `main`): Inno Setup compile; `INSTALLER_LIFECYCLE_TEST: PASS`. The kit's setup SHA-256 for `main` `8473473` is `4085d632c7d3493c173643f2b0b41beb4bee21f810c7cbf57f64b9d49aab0196` |
-| 3 | Successful clean Windows installation and execution | **Pending** | CI substitute done: Server 2022 and 2025, as administrator and as a standard user (kit `RESULT: PASS (phase 2)`, run 46016934380). Still needed: the kit on a fresh **Windows 11** VM (phase 1 without VC++, phase 2 with it) plus the manual checks |
+| 3 | Successful clean Windows installation and execution | **Accepted exception (owner decision, 27 Nov 2026)** | Verified on Windows Server 2022 and 2025 only, as administrator and as a standard user: kit `RESULT: PASS (phase 1 and 2)` and installer lifecycle PASS (run 46022914900, `main` `705f8c1`). **Not tested on Windows 11 client.** Not covered: SmartScreen and consumer Defender behaviour, a Start menu launch by hand, a machine with nothing preinstalled (the CI runners have Python, Node.js and VC++ files; only the VC++ registration was removed), and a restart on a real user profile |
 | 4 | Verified data preservation and lifecycle behaviour | **Evidenced (CI)** | Run 46016934380: `user-storage-preserved`, `datasets-preserved` and `install-refused-while-running` all PASS; reinstall removes obsolete files and keeps outside files. Reliability run 46016939702: Ctrl+C stop with exit 0, ports closed, no processes left, and the dataset served again after restart (`LIFECYCLE_TEST: PASS`, Server 2022 and 2025). Missing VC++: setup and launcher refuse safely and write no data (`MISSING_VC_RUNTIME_TEST: PASS`) |
 | 5 | Passing required tests | **Evidenced** | PR #16 CI run 46013958360: Linux, Python 3.12/3.13/3.14 (3.14: 1,418 passed, 30 skipped); Windows 3.14.10: 1,448 passed; Windows 3.12 passed; frontend checks passed. Run 46016939702 on `main`: Windows 3.14.10, 1,448 passed. PR #18 adds tests; its CI results replace these once it merges |
 | 6 | Accurate documentation | **Drafted, owner review needed** | [INSTALL.md](INSTALL.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md), [CHANGELOG.md](../CHANGELOG.md), [SECURITY.md](../SECURITY.md), [packaging/README.md](../packaging/README.md), README status. Outside this repository: the website's "Windows desktop application" wording is unreviewed |
-| 7 | A complete release verification report | **This document (draft)** | Complete when condition 3 is evidenced and the release hashes are filled in |
+| 7 | A complete release verification report | **This document (draft)** | Complete when the release installer's hash, size and commit are filled in |
 
 ## Supply chain
 
@@ -49,7 +49,7 @@ Not yet tested:
 
 ## Release files
 
-To be filled in at release time from the final build: the installer's SHA-256, its size, and the commit it was built from.
+To be filled in at release time from the final build, which is made by `.github/workflows/release-windows.yml`. That workflow builds from the chosen ref, re-tests the installer, and writes `SHA256SUMS.txt` and `release-info.json`: the installer's SHA-256, its size and the commit it was built from. It refuses to run without a `LICENSE`. At most it creates a draft release; publishing is a separate step that needs the owner's approval.
 
 | File | Size | SHA-256 | Built from |
 |---|---|---|---|
@@ -57,7 +57,7 @@ To be filled in at release time from the final build: the installer's SHA-256, i
 
 ## Go / no-go
 
-**No-go for now**, because condition 3 is pending. When the Windows 11 VM evidence passes:
+**No-go for now**: the release installer has not been built and approved. Condition 3 does not block, because it is an accepted exception, not a pass. To release:
 1. Review this report.
 2. Build the release installer from the final `main` commit.
 3. Record its hash here and in CHANGELOG.md.

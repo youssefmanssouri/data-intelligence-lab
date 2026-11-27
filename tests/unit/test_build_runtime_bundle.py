@@ -77,6 +77,8 @@ def _fake_repo(tmp_path: Path) -> Path:
         (repo / pkg / "__pycache__").mkdir()
         (repo / pkg / "__pycache__" / "x.cpython-314.pyc").write_bytes(b"junk")
     (repo / "launcher.py").write_text("# launcher", encoding="utf-8")
+    (repo / "LICENSE").write_text("Apache License 2.0", encoding="utf-8")
+    (repo / "NOTICE").write_text("notice", encoding="utf-8")
     (repo / "packaging").mkdir()
     (repo / "packaging" / "requirements-vendor.txt").write_text("a==1.0 \\\n    --hash=sha256:" + "0" * 64 + "\n", encoding="utf-8")
     fe = repo / "frontend"
@@ -288,9 +290,12 @@ def release_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     node = fixtures / "node.exe"
     node.write_bytes(b"MZ fake node")
     embed = _embed_zip(fixtures / "embed.zip")
+    node_license = fixtures / "node-LICENSE"
+    node_license.write_text("Node.js is licensed for use as follows: MIT", encoding="utf-8")
+    monkeypatch.setattr(b, "NODE_LICENSE_SHA256", _sha(node_license))
     monkeypatch.setattr(b, "NODE_EXE_SHA256", _sha(node))
     monkeypatch.setattr(b, "PYTHON_EMBED_SHA256", _sha(embed))
-    sources = {b.NODE_EXE_URL: node, b.PYTHON_EMBED_URL: embed}
+    sources = {b.NODE_EXE_URL: node, b.PYTHON_EMBED_URL: embed, b.NODE_LICENSE_URL: node_license}
 
     def fake_download(url: str, dest: Path, expected: str) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -323,7 +328,8 @@ def release_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_release_bundle_layout_and_manifest(release_bundle: Path) -> None:
     out = release_bundle
-    for rel in ("launcher.py", "backend/__init__.py", "core/__init__.py", "node/node.exe",
+    for rel in ("launcher.py", "LICENSE", "NOTICE", "backend/__init__.py", "core/__init__.py", "node/node.exe",
+                "node/LICENSE",
                 "runtime/python/python.exe", "runtime/python/python314._pth",
                 "runtime/python/Lib/site-packages/fastapi/__init__.py",
                 "frontend/.next/BUILD_ID", "frontend/scripts/server.mjs", "frontend/package-lock.json"):
@@ -423,3 +429,16 @@ def test_smoke_test_expects_the_locked_pyarrow() -> None:
     locked = re.search(r"^pyarrow==(\S+)", lock, re.M)
     expected = re.search(r'^EXPECTED_PYARROW = "([^"]+)"', smoke, re.M)
     assert locked and expected and locked.group(1) == expected.group(1)
+
+
+def test_repository_license_is_apache_2_and_ships_with_the_bundle() -> None:
+    import hashlib
+    root = Path(b.__file__).resolve().parent.parent
+    text = (root / "LICENSE").read_text(encoding="utf-8")
+    assert "Apache License" in text and "Version 2.0, January 2004" in text
+    # SHA-256 of https://www.apache.org/licenses/LICENSE-2.0.txt (LF line endings; a Windows
+    # checkout may convert them to CRLF, which does not change the text).
+    assert hashlib.sha256((root / "LICENSE").read_bytes().replace(b"\r\n", b"\n")).hexdigest() == \
+        "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    assert (root / "NOTICE").is_file()
+    assert '"LICENSE", "NOTICE"' in Path(b.__file__).read_text(encoding="utf-8")

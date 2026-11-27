@@ -26,12 +26,13 @@ The first release of Data Intelligence Lab: a local-first Windows application th
 - **The installer is not code-signed.** SmartScreen warns on first run; verify the SHA-256 below before running it.
 - **Closing the console window stops the app abruptly.** Saved datasets are safe because writes are atomic, but use Ctrl+C for an orderly stop.
 - **Datasets are not encrypted at rest.** They are protected by your Windows account's file permissions.
+- **Not tested on Windows 11 itself:** verified on Windows Server 2022 and 2025 only (see Verification).
 - **Upgrade from an earlier version is untested:** 1.0.0 is the first release, so only reinstalling over 1.0.0 has been tested.
 
 The full list is in [SECURITY.md](SECURITY.md), section 5.
 
 ### Verification
-Tested in Windows CI on Server 2022 and 2025, as administrator and as a standard user: install, reinstall, uninstall, a missing VC++ runtime, Ctrl+C shutdown and restart. A clean Windows 11 machine run is pending before release.
+Tested in Windows CI on Server 2022 and 2025, as administrator and as a standard user: install, reinstall, uninstall, a missing VC++ runtime, Ctrl+C shutdown and restart. **Not tested on a Windows 11 client machine**: Windows 11 is the supported platform, but this release was verified on Windows Server 2022 and 2025 only. SmartScreen, Defender and a manual Start menu launch on Windows 11 have not been exercised. Please report any problem.
 
 ### Release files
 | File | SHA-256 |
