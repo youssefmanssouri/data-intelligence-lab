@@ -1,4 +1,4 @@
-# Data Intelligence Lab: clean Windows 10/11 verification kit
+# Data Intelligence Lab: clean Windows 11 verification kit
 
 This kit checks the installer the way a real user meets it: on a fresh Windows machine, with a normal (non-administrator) account and nothing else installed. Your datasets are never sent anywhere. The evidence file records checks, versions and paths only.
 
@@ -13,10 +13,9 @@ This kit checks the installer the way a real user meets it: on a fresh Windows m
 
 ## Machines to test
 
-Run the kit once on each:
+Run the kit on **Windows 11**, current release (24H2 or later), x64.
 
-1. **Windows 11**, current release (24H2 or later), x64.
-2. **Windows 10 22H2**, x64. Windows 10 is past Microsoft's end of support, so record its patch level. The result tells us whether to keep claiming Windows 10 support.
+Windows 10 is not a supported platform for v1.0 (Microsoft ended its support in October 2025), so no Windows 10 run is required. The script still runs there and reports the machine as Windows 10 if you want an informational result.
 
 Use a **fresh** virtual machine (Hyper-V, VMware or VirtualBox) installed from Microsoft's official media, with:
 - a **standard local user account**, not an administrator. Create one after setup if the installer made you an administrator, and sign in as it;
