@@ -38,6 +38,8 @@ from typing import Dict, List, Optional
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 from smoke_test_bundle import SmokeFailure, check, scrubbed_env  # noqa: E402
+
+CREATE_NEW_CONSOLE = 0x00000010
 from test_installer import APP_NAME, run_setup, uninstall_entry  # noqa: E402
 
 VC_KEY = r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
@@ -185,7 +187,8 @@ def scenario(setup: Path, work: Path, evidence: Dict[str, object]) -> None:
     py = app_dir / "runtime" / "python" / "python.exe"
     try:
         result = subprocess.run([str(py), "-u", "launcher.py"], cwd=app_dir, env=scrubbed_env(storage),
-                                capture_output=True, text=True, errors="replace", timeout=120)
+                                capture_output=True, stdin=subprocess.DEVNULL, text=True, errors="replace",
+                                timeout=120)
         code, output = result.returncode, (result.stdout + result.stderr)
     except subprocess.TimeoutExpired as exc:
         raise SmokeFailure("CHECK launch-without-runtime: FAIL the launcher kept running without the runtime") from exc
@@ -202,6 +205,26 @@ def scenario(setup: Path, work: Path, evidence: Dict[str, object]) -> None:
     check("launch-without-runtime-fails-safely", outcome != "unexpected" and not started,
           f"{outcome}, exit {hex(unsigned)}")
     check("no-data-written-without-runtime", not any(storage.rglob("*")))
+
+    # 3b. Started the way the Start menu shortcut starts it (a console of its own, which
+    # closes when the launcher exits), the error must stay on screen until Enter.
+    if outcome == "launcher-message":
+        own = subprocess.Popen([str(py), "-u", "launcher.py"], cwd=app_dir, env=scrubbed_env(storage),
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               text=True, errors="replace", creationflags=CREATE_NEW_CONSOLE)
+        time.sleep(8)
+        still_waiting = own.poll() is None
+        try:
+            out, _ = own.communicate("\n", timeout=30)
+        except subprocess.TimeoutExpired:
+            own.kill()
+            out, _ = own.communicate()
+        evidence["own_console_launch"] = {"waited_for_enter": still_waiting, "exit_code": own.returncode,
+                                          "output": out[-1500:]}
+        check("error-stays-readable-in-own-console",
+              still_waiting and own.returncode == 1 and "Press Enter to close this window." in out
+              and "requires the Microsoft Visual C++ 2015-2022 Redistributable (x64)" in out,
+              f"waited {still_waiting}, exit {own.returncode}")
 
     # 4. Setup refuses with the real 14.44 requirement
     code = run_setup(setup, work / "Second" / APP_NAME, work / "install-without-runtime.log")

@@ -2455,3 +2455,39 @@ def test_port_files_use_an_existing_temp_dir_when_temp_vars_are_unset(monkeypatc
     launcher = UnifiedLauncher(repo_root=mock_app_tree, adapter=MockWin32Adapter())
     assert launcher.backend_port_file.parent == tmp_path
     assert launcher.frontend_port_file.parent == tmp_path
+
+
+def test_fatal_startup_error_waits_only_when_the_launcher_owns_its_console(monkeypatch, capsys) -> None:
+    """A Start-menu launch gets its own console, which closes on exit: a startup error
+    (for example a missing VC++ runtime) must stay readable until the user presses Enter.
+    From an existing terminal (or off Windows) the launcher must not block."""
+    class Boom:
+        def __init__(self, *a, **k): pass
+        def startup(self): raise LauncherError("VC++ runtime missing")
+    monkeypatch.setattr(launcher, "UnifiedLauncher", Boom)
+    monkeypatch.setattr(sys, "argv", ["launcher.py"])
+    waited = []
+    monkeypatch.setattr(launcher, "wait_before_closing", lambda *a, **k: waited.append(True))
+
+    monkeypatch.setattr(launcher, "owns_console_alone", lambda: False)
+    assert launcher.main() == 1
+    assert waited == []
+
+    monkeypatch.setattr(launcher, "owns_console_alone", lambda: True)
+    assert launcher.main() == 1
+    assert waited == [True]
+    assert "VC++ runtime missing" in capsys.readouterr().err
+
+
+def test_wait_before_closing_tolerates_closed_stdin() -> None:
+    import io
+    out = io.StringIO()
+    def no_stdin():
+        raise EOFError
+    launcher.wait_before_closing(stream=out, reader=no_stdin)
+    assert "Press Enter to close this window." in out.getvalue()
+
+
+def test_owns_console_alone_is_false_off_windows(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert launcher.owns_console_alone() is False

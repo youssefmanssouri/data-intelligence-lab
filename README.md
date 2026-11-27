@@ -1,4 +1,3 @@
-project not finished yet ...
 
 # Data Intelligence Lab
 
@@ -29,16 +28,19 @@ Captured from the current development build running locally (Next.js frontend + 
 
 ---
 
-## Current Project Status: Milestone 4B-1 Local API Boundary Implemented
+## Status: v1.0 release candidate (Windows 11)
 
-- **Overall Roadmap Progress:** ~42%
-- **Domain Core (Phases 1–3):** Implemented and frozen (resource safety, strict CSV parsing, explicit type inference and statistical profiling).
-- **Persistence Adapter (Milestone 4A):** Implemented and frozen (atomic Parquet + metadata persistence).
-- **Local API Boundary (Milestone 4B-1):** Implemented (FastAPI delivery layer, `IExecutionAdapter` port, `LocalExecutionAdapter`, RFC 7807 error boundary).
-- **Automated Tests** (verified 26 November 2026 on commit `e0156c6`, Linux, Python 3.13, Node 22): all suites pass, 1,271 tests, 0 failed. Milestone 4B-1 remediation awaits independent acceptance; it is not frozen.
+Version 1.0.0 is a local-first Windows desktop release: an installer that bundles its own Python 3.14.10 and Node.js 22.23.5 runtimes, a FastAPI backend and a Next.js frontend, both bound to `127.0.0.1`. It is not yet released. The remaining gates are a run on a clean Windows 11 machine and the release checklist (notes, hashes, go/no-go).
 
-  | Suite | Command | Result |
-  | --- | --- | --- |
+- **Install and use:** [Installation guide](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md) · [Release verification report](docs/VERIFICATION-REPORT-1.0.md) (draft)
+- **Security:** [SECURITY.md](SECURITY.md) lists the controls, the dependency status and the accepted limitations (for example, the installer is not code-signed).
+- **Packaging and verification:** [packaging/README.md](packaging/README.md) (bundle, installer, CRT policy) and [packaging/clean-machine/README.md](packaging/clean-machine/README.md) (clean-machine verification kit).
+- **Automated tests (27 November 2026, `main` at `8473473`):** Linux 1,418 passed, 30 skipped; Windows Server 2022, Python 3.14.10: 1,448 passed. The Windows CI also builds the bundle and installer and tests install, upgrade, uninstall, standard-user installs, a missing VC++ runtime and Ctrl+C shutdown on Server 2022 and 2025. These figures are from CI runs; re-run the suites to check the current state.
+- **Design documents:**
+  - [Product Definition](docs/01-product-definition.md): vision, user personas, the 8-stage analytical pipeline, acceptance criteria and non-goals.
+  - [Architecture Specification](docs/02-architecture.md): hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline and ADRs.
+
+--- | --- | --- |
   | Backend unit, integration & worker contract | `pytest` | 1,194 passed, 0 failed, 0 warnings (`pytest.ini` fails the run on any warning). The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
   | Frontend UI (mocked API) | `npm test` | 36 passed |
   | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
@@ -137,17 +139,16 @@ Browser-side CDN assets used by documentation or UI mockups are separate from th
 ```text
 Data Intelligence Lab/
 ├── core/                  # Pure Python domain logic (ingestion, profiling, statistics, quality)
-├── backend/               # FastAPI delivery application, route handlers, local storage adapter
-├── tests/
-│   ├── unit/              # Isolated domain tests for mathematical correctness
-│   ├── integration/       # API route, storage, and engine integration tests
-│   └── fixtures/          # Benchmark and test dataset files
-├── docs/
-│   ├── 01-product-definition.md  # Formal product requirements and non-goals
-│   └── 02-architecture.md        # Technical architecture, security, and ADRs
-├── .gitignore             # Comprehensive development exclusions
-├── README.md              # Project overview and setup documentation
-└── SECURITY.md            # Security policy, reporting procedure, and baseline
+├── backend/               # FastAPI application, routes, request guard, local storage adapter
+├── frontend/              # Next.js user interface and the loopback proxy server
+├── launcher.py            # Windows launcher: starts both services in a Job Object, opens the browser
+├── packaging/             # Runtime bundle builder, Inno Setup installer, packaging tests, clean-machine kit
+├── tests/                 # Unit and integration tests (pytest)
+├── docs/                  # Installation, troubleshooting, product and architecture documents
+├── .github/workflows/     # CI: tests, CRT-free PyArrow build, bundle, installer, clean-machine, reliability
+├── CHANGELOG.md           # Release notes
+├── README.md              # Project overview and development setup
+└── SECURITY.md            # Security controls, dependency status and limitations
 ```
 
 ---

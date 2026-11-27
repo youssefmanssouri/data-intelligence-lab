@@ -1721,6 +1721,34 @@ class UnifiedLauncher:
         return cleanup_errors
 
 
+def owns_console_alone() -> bool:
+    """
+    True when this process is the only one attached to its console, i.e. Windows opened
+    the console just for the launcher (Start menu shortcut, double-click). That window
+    closes the moment the launcher exits, so a startup error would vanish unread.
+    False off Windows, without a console, or when started from an existing terminal.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        pids = (DWORD * 4)()
+        count = kernel32.GetConsoleProcessList(pids, 4)
+    except (AttributeError, OSError):
+        return False
+    return count == 1
+
+
+def wait_before_closing(stream=None, reader=input) -> None:
+    """Keeps a launcher-owned console open so the user can read a startup error."""
+    out = stream if stream is not None else sys.stderr
+    print("\nPress Enter to close this window.", file=out, flush=True)
+    try:
+        reader()
+    except (EOFError, KeyboardInterrupt, OSError):
+        pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Data Intelligence Lab - Unified Launcher")
     parser.add_argument("--repo-root", default=None, help="Root path of the application repository")
@@ -1741,6 +1769,8 @@ def main() -> int:
         return code
     except Exception as exc:
         print(f"[FATAL] Launcher failed: {exc}", file=sys.stderr)
+        if owns_console_alone():
+            wait_before_closing()
         return 1
 
 
