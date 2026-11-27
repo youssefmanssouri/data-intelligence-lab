@@ -33,6 +33,7 @@ from pathlib import Path
 import re
 import signal
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -1170,7 +1171,9 @@ class UnifiedLauncher:
         self.frontend_port: Optional[int] = None
 
         nonce = uuid.uuid4().hex[:8]
-        temp_dir = Path(os.environ.get("TEMP", os.environ.get("TMP", "C:\\Temp")))
+        # tempfile.gettempdir() honours TMPDIR/TEMP/TMP and, when none is set, falls back
+        # to a directory that exists and is writable instead of a hardcoded C:\Temp.
+        temp_dir = Path(tempfile.gettempdir())
         self.backend_port_file = temp_dir / f"dil_backend_{os.getpid()}_{nonce}.port"
         self.frontend_port_file = temp_dir / f"dil_frontend_{os.getpid()}_{nonce}.port"
 
