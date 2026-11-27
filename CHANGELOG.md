@@ -1,6 +1,6 @@
 # Release notes
 
-## 1.0.0 — release candidate (built 27 November 2026, not yet published)
+## 1.0.0 — 27 November 2026
 
 The first release of Data Intelligence Lab: a local-first Windows application that turns CSV files into profiled, quality-scored datasets without sending anything off your PC.
 
