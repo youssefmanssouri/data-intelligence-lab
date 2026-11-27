@@ -55,7 +55,7 @@ Captured from the current development build running locally (Next.js frontend + 
 ## Local Environment & Running the Server
 
 ### Prerequisites
-- **Python:** 3.12 (64-bit)
+- **Python:** 3.12, 3.13 or 3.14 (64-bit) for development; installed copies run on their bundled CPython 3.14.10, and building the bundle needs CPython 3.14
 - **Git:** 2.x+
 
 ### Setup

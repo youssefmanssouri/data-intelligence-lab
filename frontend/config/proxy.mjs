@@ -1,3 +1,6 @@
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 /** Configuration only: no request, query, header or browser value selects the origin. */
 export function backendOrigin(value = "http://127.0.0.1:8000") {
   if (
@@ -74,4 +77,44 @@ export function isApiPath(path) {
     path === "/api/v1/datasets/upload" ||
     /^\/api\/v1\/datasets\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(path)
   );
+}
+
+// Port announcement for the desktop launcher. The launcher polls for this file
+// and accepts only ASCII digits, so the value is written to a sibling temporary
+// file and renamed into place: a reader never observes a partial write.
+const announcedPorts = new Map();
+
+export function writePortFile(path, port) {
+  if (typeof path !== "string" || path.length === 0)
+    throw new Error("Port file path must be a non-empty string.");
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error(`Refusing to announce invalid port ${port}.`);
+  const target = resolve(path);
+  const temp = `${target}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temp, String(port), { encoding: "ascii", flag: "wx" });
+    renameSync(temp, target);
+  } catch (err) {
+    rmSync(temp, { force: true });
+    throw err;
+  }
+  announcedPorts.set(target, String(port));
+}
+
+// Removes the file only if it still holds this process's announcement, so a
+// newer invocation's file is never deleted.
+export function cleanupPortFile(path) {
+  if (typeof path !== "string" || path.length === 0) return;
+  const target = resolve(path);
+  const expected = announcedPorts.get(target);
+  announcedPorts.delete(target);
+  if (expected === undefined) return;
+  let content;
+  try {
+    content = readFileSync(target, "ascii");
+  } catch (err) {
+    if (err?.code === "ENOENT") return;
+    throw err;
+  }
+  if (content === expected) rmSync(target, { force: true });
 }

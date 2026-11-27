@@ -21,6 +21,7 @@ from backend.errors import (
     register_error_handlers,
 )
 from backend.ports import IExecutionAdapter
+from backend.request_guard import LocalRequestGuard
 from backend.routes.datasets import router as datasets_router
 from backend.routes.health import router as health_router
 from core.types import IngestionLimits
@@ -168,6 +169,9 @@ def create_app(
             limits=IngestionLimits(max_bytes=app_settings.max_upload_bytes),
         )
     app.state.settings = app_settings
+    storage = getattr(app.state.adapter, "storage", None)
+    if hasattr(storage, "sweep_stale_staging"):
+        storage.sweep_stale_staging()
     resolve_effective_upload_budget(app_settings, app.state.adapter)
 
     # Register RFC 7807 Problem Details error boundary
@@ -175,6 +179,10 @@ def create_app(
 
     # Register bounded upload intake middleware
     app.add_middleware(BoundedUploadMiddleware)
+
+    # Outermost: refuse non-loopback Host, cross-site and foreign-origin requests
+    # before routing or body intake (see backend/request_guard.py).
+    app.add_middleware(LocalRequestGuard)
 
     # Register API route handlers
     app.include_router(health_router)
