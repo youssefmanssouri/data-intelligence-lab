@@ -17,10 +17,10 @@ Data Intelligence Lab v1.0 packages a completely offline, self-contained desktop
 ├── node\
 │   └── node.exe                     # Bundled Node.js 22.23.5 (win-x64), SHA-256 pinned
 ├── runtime\
-│   └── python\                      # Bundled CPython 3.12 64-bit embeddable runtime
+│   └── python\                      # Bundled CPython 3.14 64-bit embeddable runtime
 │       ├── python.exe
 │       ├── pythonw.exe
-│       ├── python312._pth           # sys.path: stdlib zip, runtime, Lib\site-packages, bundle root
+│       ├── python314._pth           # sys.path: stdlib zip, runtime, Lib\site-packages, bundle root
 │       └── Lib\site-packages\       # Vendored production dependencies
 ├── backend\                         # FastAPI / Uvicorn backend service
 ├── core\                            # Analysis & execution engine
@@ -60,7 +60,7 @@ The bundle therefore ships no Microsoft CRT: the target machine needs the Micros
 
 ## 4. Building the Standalone Runtime Bundle
 
-Prerequisites on the build machine: Python 3.12+, Node.js 22 with npm, the wheelhouse from section 3, and a production frontend build:
+Prerequisites on the build machine: CPython 3.14 (it compiles the bundle's bytecode, so it must match the bundled runtime's version), Node.js 22 with npm, the wheelhouse from section 3, and a production frontend build:
 
 ```powershell
 cd frontend; npm ci; npm run build; cd ..
@@ -69,9 +69,9 @@ python packaging/build_runtime_bundle.py --verify "$env:TEMP\dil_bundle"
 ```
 
 Release mode fails closed. It:
-- downloads (or reuses from `--cache-dir`) Node.js 22.23.5 `node.exe` and the CPython 3.12.10 embeddable package, each checked against a pinned SHA-256; a local `node\node.exe` is used only if it matches the pin, and nothing is ever replaced by a placeholder;
-- extracts the embeddable package **without** `vcruntime140.dll` and `vcruntime140_1.dll` (see section 7) and writes `python312._pth` so `python -m backend.main` resolves the bundle root and `Lib\site-packages`;
-- checks the wheelhouse against `wheelhouse-manifest.json` and the current lock, then installs it offline (`--no-index --require-hashes`, cp312-win_amd64) into `runtime\python\Lib\site-packages`;
+- downloads (or reuses from `--cache-dir`) Node.js 22.23.5 `node.exe` and the CPython 3.14.10 embeddable package, each checked against a pinned SHA-256 (the bundle CI also verifies the embeddable package's Sigstore signature from python.org); a local `node\node.exe` is used only if it matches the pin, and nothing is ever replaced by a placeholder;
+- extracts the embeddable package **without** `vcruntime140.dll` and `vcruntime140_1.dll` (see section 7) and writes `python314._pth` so `python -m backend.main` resolves the bundle root and `Lib\site-packages`;
+- checks the wheelhouse against `wheelhouse-manifest.json` and the current lock, then installs it offline (`--no-index --require-hashes`, cp314-win_amd64) into `runtime\python\Lib\site-packages`;
 - stages the frontend's built `.next` output (without build caches and traces), `config`, `scripts`, `next.config.mjs` and `package*.json`, then runs `npm ci --omit=dev --ignore-scripts --os=win32 --cpu=x64` there;
 - runs the CRT gate over every PE image (`.dll`, `.pyd`, `.node`, `.exe`) and writes `manifest.json` (size and SHA-256 of every file, plus runtime versions, the frontend BUILD_ID and the vendored wheel hashes).
 

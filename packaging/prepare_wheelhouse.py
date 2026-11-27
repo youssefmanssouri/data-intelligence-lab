@@ -37,14 +37,16 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from build_runtime_bundle import CRT_DLL_NAMES, CRT_PREFIXES, compute_sha256  # noqa: E402
+from build_runtime_bundle import (  # noqa: E402
+    CRT_DLL_NAMES, CRT_PREFIXES, PYTHON_MAJOR_MINOR, PYTHON_TAG, PYTHON_TARGET, compute_sha256,
+)
 
 LOCK_PATH = _HERE / "requirements-vendor.txt"
 LOCAL_ONLY_PACKAGE = "pyarrow"
 # The interpreter the wheelhouse is for: the bundled CPython embeddable runtime.
-TARGET_PYTHON_VERSION = "3.14"
-TARGET_ABI = "cp314"
-TARGET = f"{TARGET_ABI}-win_amd64"
+TARGET_PYTHON_VERSION = ".".join(map(str, PYTHON_MAJOR_MINOR))
+TARGET_ABI = f"cp{PYTHON_TAG}"
+TARGET = PYTHON_TARGET
 TARGET_PIP_ARGS = (
     "--only-binary=:all:",
     "--platform", "win_amd64",

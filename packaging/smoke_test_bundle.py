@@ -1,7 +1,7 @@
 """
 Data Intelligence Lab - independent smoke test of a staged Windows runtime bundle.
 
-Usage (Windows only, from any Python 3.12+):
+Usage (Windows only, from any Python 3.12+; the app itself runs on its bundled runtime):
     python packaging/smoke_test_bundle.py --bundle <BUNDLE_DIR> --work-dir <EMPTY_DIR> [--evidence out.json]
     python packaging/smoke_test_bundle.py --installed <APP_DIR> --work-dir <EMPTY_DIR>   (an installed copy)
 
@@ -47,7 +47,10 @@ import uuid
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
-from build_runtime_bundle import NODE_VERSION, verify_bundle  # noqa: E402
+from build_runtime_bundle import NODE_VERSION, PYTHON_VERSION, verify_bundle  # noqa: E402
+
+# The CRT-free PyArrow pinned in packaging/requirements-vendor.txt.
+EXPECTED_PYARROW = "26.0.1"
 
 # Files Inno Setup adds next to the bundle (packaging/setup.iss).
 INSTALLER_FILES = frozenset({"unins000.exe", "unins000.dat", "unins000.msg",
@@ -183,12 +186,12 @@ def smoke(bundle: Path, work: Path, evidence: Dict[str, object], installed: bool
     out = run([str(py), "-c", PYTHON_PROBE, str(install)], env, cwd=install)
     probe = json.loads(next(line for line in out.splitlines() if line.startswith("PROBE_JSON "))[11:])
     evidence["python"] = probe
-    check("python-version", probe["version"] == "3.12.10", probe["version"])
+    check("python-version", probe["version"] == PYTHON_VERSION, probe["version"])
     check("python-sys-path-confined", not probe["path_outside_bundle"], probe["path_outside_bundle"])
     system_dir = os.path.realpath(os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")).lower()
     crt = probe["crt_loaded_from"]
     check("crt-from-system", bool(crt) and all(os.path.realpath(p).lower().startswith(system_dir) for p in crt.values()), crt)
-    check("vendored-imports", probe["pyarrow"] == "18.1.0" and all(probe["absent"].values()),
+    check("vendored-imports", probe["pyarrow"] == EXPECTED_PYARROW and all(probe["absent"].values()),
           f"pyarrow {probe['pyarrow']}, fastapi {probe['fastapi']}, absent {probe['absent']}")
     check("parquet-roundtrip", probe["roundtrip"] == {"x": [1, 2, None], "s": ["a", "", "c"]})
 

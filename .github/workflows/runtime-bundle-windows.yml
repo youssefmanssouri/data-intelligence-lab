@@ -14,13 +14,15 @@ on:
   push:
     branches:
       - phase/1f3-10-runtime-bundle
+      - phase/1f3-17-cp314-bundle
 
 permissions:
   contents: read # checkout and download the build-input pre-release
 
 env:
-  PYARROW_RELEASE_TAG: build-input/pyarrow-18.1.0-crt-free-r8r5-45765026782
-  PYARROW_WHEEL: pyarrow-18.1.0-cp312-cp312-win_amd64.whl
+  PYARROW_RELEASE_TAG: build-input/pyarrow-26.0.1-crt-free-cp314-45981135518
+  PYARROW_WHEEL: pyarrow-26.0.1-cp314-cp314-win_amd64.whl
+  PYARROW_WHEEL_SHA256: c2ebaacbf888bafdba0eb052266fcf9107b5f62f7f4e6e488c1a7f4756847703
   NODE_ZIP: node-v22.23.5-win-x64.zip
   # From https://nodejs.org/dist/v22.23.5/SHASUMS256.txt
   NODE_ZIP_SHA256: 4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3
@@ -35,11 +37,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Set up Python 3.12.10 x64 (build tool only)
+      - name: Set up Python 3.14.10 x64 (build tool only)
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
-          python-version: "3.12.10"
+          python-version: "3.14.10"
           architecture: "x64"
+
+      - name: Verify the CPython embeddable package's Sigstore signature (provenance of the pinned SHA-256)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # python.org signs CPython 3.14 releases with Sigstore; 3.14 is released by Hugo van Kemenade.
+          # https://www.python.org/downloads/metadata/sigstore/
+          $ver = python -I -c "import sys; sys.path.insert(0, 'packaging'); import build_runtime_bundle as b; print(b.PYTHON_VERSION)"
+          $pin = python -I -c "import sys; sys.path.insert(0, 'packaging'); import build_runtime_bundle as b; print(b.PYTHON_EMBED_SHA256)"
+          $dir = Join-Path $env:RUNNER_TEMP "embed-provenance"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $zip = Join-Path $dir "python-$ver-embed-amd64.zip"
+          Invoke-WebRequest "https://www.python.org/ftp/python/$ver/python-$ver-embed-amd64.zip" -OutFile $zip
+          Invoke-WebRequest "https://www.python.org/ftp/python/$ver/python-$ver-embed-amd64.zip.sigstore" -OutFile "$zip.sigstore"
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "embeddable package SHA-256: $actual (pinned $pin)"
+          if ($actual -ne $pin) { throw "Downloaded embeddable package does not match the pinned SHA-256" }
+          python -m venv "$env:RUNNER_TEMP\sigstore-venv"
+          & "$env:RUNNER_TEMP\sigstore-venv\Scripts\python.exe" -m pip install --disable-pip-version-check -q "sigstore==4.6.0"
+          if ($LASTEXITCODE -ne 0) { throw "sigstore install failed ($LASTEXITCODE)" }
+          & "$env:RUNNER_TEMP\sigstore-venv\Scripts\python.exe" -m sigstore verify identity --bundle "$zip.sigstore" --cert-identity hugo@python.org --cert-oidc-issuer https://github.com/login/oauth $zip
+          if ($LASTEXITCODE -ne 0) { throw "Sigstore verification of the embeddable package failed ($LASTEXITCODE)" }
+          "EMBED_SIGSTORE: PASS"
 
       - name: Set up Node.js 22.23.5 (build tool only, hash-pinned)
         shell: pwsh
@@ -70,6 +95,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           gh release download $env:PYARROW_RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:PYARROW_WHEEL --dir "$env:RUNNER_TEMP\pyarrow"
           if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)" }
+          $h = (Get-FileHash "$env:RUNNER_TEMP\pyarrow\$env:PYARROW_WHEEL" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($h -ne $env:PYARROW_WHEEL_SHA256) { throw "PyArrow wheel SHA-256 mismatch: $h" }
 
       - name: Build the verified wheelhouse
         shell: pwsh

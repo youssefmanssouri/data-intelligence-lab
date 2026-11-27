@@ -37,9 +37,9 @@ def _sha(path: Path) -> str:
 def _embed_zip(path: Path, extra: dict[str, bytes] | None = None) -> Path:
     members = {
         "python.exe": b"MZ python",
-        "python312.dll": b"MZ dll",
-        "python312.zip": b"PK stdlib",
-        "python312._pth": b"python312.zip\n.\n\n# Uncomment to run site.main() automatically\n#import site\n",
+        "python314.dll": b"MZ dll",
+        "python314.zip": b"PK stdlib",
+        "python314._pth": b"python314.zip\n.\n\n# Uncomment to run site.main() automatically\n#import site\n",
         "_socket.pyd": b"MZ pyd",
         "vcruntime140.dll": b"MZ" + MSFT + VS,
         "vcruntime140_1.dll": b"MZ" + MSFT + VS,
@@ -55,11 +55,11 @@ def _wheelhouse(tmp_path: Path, lock: Path) -> Path:
     wh = tmp_path / "wheelhouse"
     wh.mkdir()
     wheels = []
-    for name in ("a-1.0-py3-none-any.whl", "b-2.0-cp312-cp312-win_amd64.whl"):
+    for name in ("a-1.0-py3-none-any.whl", "b-2.0-cp314-cp314-win_amd64.whl"):
         (wh / name).write_bytes(name.encode())
         wheels.append({"file": name, "sha256": _sha(wh / name), "size": len(name)})
     manifest = {
-        "target": "cp312-win_amd64",
+        "target": "cp314-win_amd64",
         "lock": lock.name,
         "lock_sha256": _sha(lock),
         "wheel_count": len(wheels),
@@ -75,7 +75,7 @@ def _fake_repo(tmp_path: Path) -> Path:
         (repo / pkg).mkdir(parents=True)
         (repo / pkg / "__init__.py").write_text("", encoding="utf-8")
         (repo / pkg / "__pycache__").mkdir()
-        (repo / pkg / "__pycache__" / "x.cpython-312.pyc").write_bytes(b"junk")
+        (repo / pkg / "__pycache__" / "x.cpython-314.pyc").write_bytes(b"junk")
     (repo / "launcher.py").write_text("# launcher", encoding="utf-8")
     (repo / "packaging").mkdir()
     (repo / "packaging" / "requirements-vendor.txt").write_text("a==1.0 \\\n    --hash=sha256:" + "0" * 64 + "\n", encoding="utf-8")
@@ -161,8 +161,8 @@ def test_python_runtime_excludes_microsoft_crt_and_writes_pth(tmp_path: Path) ->
     assert not (dest / "vcruntime140.dll").exists()
     assert not (dest / "vcruntime140_1.dll").exists()
     assert (dest / "python.exe").is_file() and (dest / "_socket.pyd").is_file()
-    pth = (dest / "python312._pth").read_text(encoding="utf-8").splitlines()
-    assert pth == ["python312.zip", ".", "Lib\\site-packages", "..\\..", "import site"]
+    pth = (dest / "python314._pth").read_text(encoding="utf-8").splitlines()
+    assert pth == ["python314.zip", ".", "Lib\\site-packages", "..\\..", "import site"]
 
 
 def test_python_runtime_rejects_nested_members(tmp_path: Path) -> None:
@@ -176,7 +176,7 @@ def test_python_runtime_detects_layout_change(tmp_path: Path) -> None:
     path = tmp_path / "e.zip"
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("python.exe", b"MZ")
-        z.writestr("python312._pth", b"python312.zip\n")
+        z.writestr("python314._pth", b"python314.zip\n")
     dest = tmp_path / "py"
     dest.mkdir()
     with pytest.raises(b.BundleError, match="layout changed"):
@@ -219,7 +219,7 @@ def test_verify_wheelhouse_requires_windows_target(tmp_path: Path) -> None:
     lock.write_text("lock", encoding="utf-8")
     wh = _wheelhouse(tmp_path, lock)
     m = json.loads((wh / "wheelhouse-manifest.json").read_text(encoding="utf-8"))
-    m["target"] = "cp312-manylinux_x86_64"
+    m["target"] = "cp314-manylinux_x86_64"
     (wh / "wheelhouse-manifest.json").write_text(json.dumps(m), encoding="utf-8")
     with pytest.raises(b.BundleError, match="targets"):
         b.verify_wheelhouse(wh, lock)
@@ -324,7 +324,7 @@ def release_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_release_bundle_layout_and_manifest(release_bundle: Path) -> None:
     out = release_bundle
     for rel in ("launcher.py", "backend/__init__.py", "core/__init__.py", "node/node.exe",
-                "runtime/python/python.exe", "runtime/python/python312._pth",
+                "runtime/python/python.exe", "runtime/python/python314._pth",
                 "runtime/python/Lib/site-packages/fastapi/__init__.py",
                 "frontend/.next/BUILD_ID", "frontend/scripts/server.mjs", "frontend/package-lock.json"):
         assert (out / rel).is_file(), rel
@@ -366,26 +366,26 @@ def test_development_mode_offline_still_stages_layout(tmp_path: Path) -> None:
 
 # --- Precompiled bytecode -----------------------------------------------------------
 
-def test_precompile_requires_cpython_312(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_precompile_requires_the_bundled_cpython_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(b.sys, "version_info", (3, 13, 0, "final", 0))
-    with pytest.raises(b.BundleError, match="CPython 3.12"):
+    with pytest.raises(b.BundleError, match="CPython 3.14"):
         b.precompile_bytecode(tmp_path, [tmp_path])
 
 
-@pytest.mark.skipif(sys.version_info[:2] != (3, 12), reason="bundle bytecode is compiled by CPython 3.12")
+@pytest.mark.skipif(sys.version_info[:2] != b.PYTHON_MAJOR_MINOR, reason="bundle bytecode is compiled by the bundled CPython version")
 def test_precompile_writes_unchecked_hash_pyc_without_build_paths(tmp_path: Path) -> None:
     pkg = tmp_path / "backend"
     pkg.mkdir()
     (pkg / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
     assert b.precompile_bytecode(tmp_path, [pkg]) == 1
-    pyc = pkg / "__pycache__" / "mod.cpython-312.pyc"
+    pyc = pkg / "__pycache__" / "mod.cpython-314.pyc"
     data = pyc.read_bytes()
     flags = int.from_bytes(data[4:8], "little")
     assert flags == 0b01, "unchecked-hash pyc (hash-based, check_source off)"
     assert str(tmp_path).encode() not in data, "build-machine path must not be recorded"
 
 
-@pytest.mark.skipif(sys.version_info[:2] != (3, 12), reason="bundle bytecode is compiled by CPython 3.12")
+@pytest.mark.skipif(sys.version_info[:2] != b.PYTHON_MAJOR_MINOR, reason="bundle bytecode is compiled by the bundled CPython version")
 def test_precompile_fails_closed_on_syntax_error(tmp_path: Path) -> None:
     (tmp_path / "bad.py").write_text("def broken(:\n", encoding="utf-8")
     with pytest.raises(b.BundleError, match="compilation failed"):
@@ -399,6 +399,27 @@ def test_verify_bundle_allows_only_accepted_unlisted_files(release_bundle: Path)
         b.verify_bundle(out)
     assert b.verify_bundle(out, allow_unlisted=lambda rel: rel == "unins000.exe")["file_count"] > 0
     (out / "backend" / "__pycache__").mkdir()
-    (out / "backend" / "__pycache__" / "x.cpython-312.pyc").write_bytes(b"x")
+    (out / "backend" / "__pycache__" / "x.cpython-314.pyc").write_bytes(b"x")
     with pytest.raises(b.BundleError, match="unlisted"):
         b.verify_bundle(out, allow_unlisted=lambda rel: rel == "unins000.exe")
+
+
+# --- One interpreter version everywhere ----------------------------------------------
+
+def test_bundle_constants_name_one_interpreter_version() -> None:
+    major, minor = b.PYTHON_MAJOR_MINOR
+    assert b.PYTHON_VERSION.startswith(f"{major}.{minor}.")
+    assert b.PYTHON_TAG == f"{major}{minor}"
+    assert b.PYTHON_TARGET == f"cp{major}{minor}-win_amd64"
+    assert b.PYTHON_EMBED_URL.endswith(f"/{b.PYTHON_VERSION}/python-{b.PYTHON_VERSION}-embed-amd64.zip")
+    assert b.PYTHON_PTH_NAME == f"python{major}{minor}._pth"
+    assert b.PYTHON_PTH_CONTENT.startswith(f"python{major}{minor}.zip\n")
+
+
+def test_smoke_test_expects_the_locked_pyarrow() -> None:
+    import re
+    lock = (Path(b.__file__).parent / "requirements-vendor.txt").read_text(encoding="utf-8")
+    smoke = (Path(b.__file__).parent / "smoke_test_bundle.py").read_text(encoding="utf-8")
+    locked = re.search(r"^pyarrow==(\S+)", lock, re.M)
+    expected = re.search(r'^EXPECTED_PYARROW = "([^"]+)"', smoke, re.M)
+    assert locked and expected and locked.group(1) == expected.group(1)
