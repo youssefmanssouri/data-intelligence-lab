@@ -49,7 +49,7 @@ Not yet tested:
 
 ## Release files
 
-To be filled in at release time from the final build: the installer's SHA-256, its size, and the commit it was built from.
+To be filled in at release time from the final build, which is made by `.github/workflows/release-windows.yml`. That workflow builds from the chosen ref, re-tests the installer, and writes `SHA256SUMS.txt` and `release-info.json`: the installer's SHA-256, its size and the commit it was built from. It refuses to run without a `LICENSE`. At most it creates a draft release; publishing is a separate step that needs the owner's approval.
 
 | File | Size | SHA-256 | Built from |
 |---|---|---|---|
