@@ -44,7 +44,8 @@ Version 1.1.0 adds **"What this data says"**: rule-based, deterministic findings
   - [Product Definition](docs/01-product-definition.md): vision, user personas, the 8-stage analytical pipeline, acceptance criteria and non-goals.
   - [Architecture Specification](docs/02-architecture.md): hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline and ADRs.
 
---- | --- | --- |
+  | Suite | Command | Documented CI Result |
+  | --- | --- | --- |
   | Backend unit, integration & worker contract | `pytest` | 1,194 passed, 0 failed, 0 warnings (`pytest.ini` fails the run on any warning). The former `test_cross_process_contention_and_owner_exit` flake (a multiprocessing barrier lifetime bug in the test) is fixed. |
   | Frontend UI (mocked API) | `npm test` | 36 passed |
   | Frontend ↔ real backend end-to-end | `npm run test:real` | 6 passed |
@@ -52,9 +53,6 @@ Version 1.1.0 adds **"What this data says"**: rule-based, deterministic findings
   | Lint, type check, production build | `npm run lint`, `typecheck`, `build` | All pass |
 
   The Playwright configs are cross-platform: they start the server with `node scripts/server.mjs`, and `npm run test:real` uses `DIL_PYTHON` when set, otherwise the repository `.venv` Python if it exists (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` elsewhere), otherwise the system Python on `PATH` (`python` on Windows, `python3` elsewhere). CI runs every suite above on Linux.
-- **Documentation:**
-  - [Product Definition](docs/01-product-definition.md): Vision, user personas, 8-stage analytical pipeline, measurable acceptance criteria, and non-goals.
-  - [Architecture Specification](docs/02-architecture.md): Hexagonal architecture, C4 diagrams, request lifecycle, OWASP ASVS 5.0.0 Level 2 baseline, and ADRs.
 
 ---
 
