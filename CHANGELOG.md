@@ -26,7 +26,9 @@ Platform, requirements, security controls and known limitations are the same as 
 ### Release files
 | File | SHA-256 |
 |---|---|
-| `DataIntelligenceLab-Setup-1.1.0.exe` | *recorded after the release build* |
+| `DataIntelligenceLab-Setup-1.1.0.exe` (102,351,042 bytes) | `aa575b6810664c9d3b25e906ebd42562d64b981fa02b7aa214e6e0a3d5ad81b5` |
+
+Built from `main` `03b1263` by release run 46088895257, which re-tested this exact installer: bundle smoke test, full install/reinstall/uninstall lifecycle, and the upgrade from the published 1.0.0. See [the 1.1 verification report](docs/VERIFICATION-REPORT-1.1.md).
 
 ## 1.0.0 — 27 November 2026
 
