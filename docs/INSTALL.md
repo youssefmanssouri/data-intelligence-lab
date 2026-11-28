@@ -1,4 +1,4 @@
-# Installing Data Intelligence Lab 1.0
+# Installing Data Intelligence Lab
 
 Data Intelligence Lab runs entirely on your PC. It installs for your Windows account only, needs no administrator rights, and sends nothing over the network.
 
@@ -29,14 +29,14 @@ The installer is **not code-signed**. Windows cannot confirm who published it, s
 In PowerShell, in the folder where you saved it:
 
 ```powershell
-Get-FileHash .\DataIntelligenceLab-Setup-1.0.0.exe -Algorithm SHA256
+Get-FileHash .\DataIntelligenceLab-Setup-1.1.0.exe -Algorithm SHA256
 ```
 
 If the hash differs from the published one, do not run the file.
 
 ## 4. Run setup
 
-1. Double-click `DataIntelligenceLab-Setup-1.0.0.exe`.
+1. Double-click `DataIntelligenceLab-Setup-1.1.0.exe`.
 2. Because the installer is unsigned, Microsoft Defender SmartScreen may show **"Windows protected your PC"**. If the hash matched in step 3, click **More info**, then **Run anyway**.
 3. Follow the steps. You can add a desktop shortcut (it is off by default).
 
