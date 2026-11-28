@@ -170,7 +170,7 @@ jobs:
           "SETUP_SHA256: $hash"
 
       - name: Upload the verification kit
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dil-clean-machine-kit
           path: ${{ runner.temp }}\kit
@@ -178,7 +178,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload the bundle manifest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dil-bundle-manifest
           path: ${{ runner.temp }}\bundle\manifest.json
@@ -270,7 +270,7 @@ jobs:
 
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: clean-machine-evidence-${{ matrix.os }}
           path: |
@@ -325,7 +325,7 @@ jobs:
 
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: missing-vc-runtime-evidence
           path: |
