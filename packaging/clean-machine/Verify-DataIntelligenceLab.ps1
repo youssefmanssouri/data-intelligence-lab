@@ -23,7 +23,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Setup = (Join-Path $PSScriptRoot "DataIntelligenceLab-Setup-1.0.0.exe"),
+    [string]$Setup = (Join-Path $PSScriptRoot "DataIntelligenceLab-Setup-1.1.0.exe"),
     [switch]$SkipInteractive
 )
 

@@ -1,5 +1,33 @@
 # Release notes
 
+## 1.1.0 — 27 November 2026
+
+### New: "What this data says"
+The dashboard now opens with plain-language findings about the uploaded CSV, for example:
+- "'order_date' has a gap of 22 days with no rows, between 2025-08-03 and 2025-08-25."
+- "'discount_pct' is missing 27% of its values (806 rows)."
+- "Typical 'revenue' is 2.8x higher for 'Casablanca' (median 901.08) than for 'Rabat' (median 321.75) in 'region'."
+
+How the findings work:
+- **Rule-based and deterministic.** 13 fixed rules cover missing values, duplicates, constant and identifier columns, outliers, skew, date ranges and gaps, dominant categories, correlations and group differences. There is no AI model and no randomness: the same file always gives the same findings.
+- **Local.** Findings are computed on your PC from the stored dataset and are not written to disk. Datasets saved by 1.0.0 get findings too.
+- **Careful wording.** Relationship findings state that they are not proof of a cause. Each finding includes the numbers it is based on.
+- **Bounded.** Large files are read from an evenly spaced sample of 20,000 rows, with a 10-second limit, and the panel says when either applies.
+
+The rules, thresholds and limits are documented in [docs/INSIGHTS.md](docs/INSIGHTS.md).
+
+### Other changes
+- New API route: `GET /api/v1/datasets/{id}/insights`.
+- Tests added: 31 unit and API tests for the rules, 4 mocked UI tests and 1 end-to-end test against the real backend.
+
+### Unchanged
+Platform, requirements, security controls and known limitations are the same as in 1.0.0 (below). Close the app and run the 1.1.0 installer over 1.0.0. Datasets are stored outside the application folder, so setup does not touch them. The release build tests that upgrade with the real installers: it installs the published 1.0.0, creates a dataset with it, upgrades to 1.1.0, and checks that the dataset is still served, gets insights and is unchanged on disk.
+
+### Release files
+| File | SHA-256 |
+|---|---|
+| `DataIntelligenceLab-Setup-1.1.0.exe` | *recorded after the release build* |
+
 ## 1.0.0 — 27 November 2026
 
 The first release of Data Intelligence Lab: a local-first Windows application that turns CSV files into profiled, quality-scored datasets without sending anything off your PC.

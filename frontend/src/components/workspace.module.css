@@ -835,3 +835,61 @@
     margin-top: 16px;
   }
 }
+
+.insights {
+  margin-bottom: 18px;
+}
+.insightList {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.insightList li {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.insightList li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.severity {
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 10px;
+  text-align: center;
+  background: var(--panel-2);
+  color: var(--ink-2);
+}
+.insightList li[data-severity="high"] .severity {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.insightList li[data-severity="medium"] .severity {
+  color: var(--warn);
+}
+.insightTitle {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.insightDetail {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .insightList li {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .severity {
+    justify-self: start;
+  }
+}

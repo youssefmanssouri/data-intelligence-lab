@@ -152,7 +152,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python packaging/test_installer.py --setup "$env:RUNNER_TEMP\dist\DataIntelligenceLab-Setup-1.0.0.exe" --vc-gate-setup "$env:RUNNER_TEMP\dist-vc-gate\DataIntelligenceLab-Setup-1.0.0.exe" --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\installer-test" --evidence "$env:RUNNER_TEMP\installer-evidence.json"
+          python packaging/test_installer.py --setup "$env:RUNNER_TEMP\dist\DataIntelligenceLab-Setup-1.1.0.exe" --vc-gate-setup "$env:RUNNER_TEMP\dist-vc-gate\DataIntelligenceLab-Setup-1.1.0.exe" --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\installer-test" --evidence "$env:RUNNER_TEMP\installer-evidence.json"
           if ($LASTEXITCODE -ne 0) { throw "installer lifecycle test failed ($LASTEXITCODE)" }
 
       - name: Upload evidence
