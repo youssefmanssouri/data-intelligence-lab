@@ -196,6 +196,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ inputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
           $old = "$env:RUNNER_TEMP\upgrade-from"
@@ -204,7 +205,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "could not download $env:UPGRADE_FROM_SETUP" }
           $hash = (Get-FileHash (Join-Path $old $env:UPGRADE_FROM_SETUP) -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne $env:UPGRADE_FROM_SHA256) { throw "published installer hash $hash does not match the recorded $env:UPGRADE_FROM_SHA256" }
-          python packaging/test_upgrade.py --old-setup (Join-Path $old $env:UPGRADE_FROM_SETUP) --old-version $env:UPGRADE_FROM_VERSION --new-setup "$env:RUNNER_TEMP\dist\$env:SETUP_NAME" --new-version "${{ inputs.version }}" --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\upgrade-test" --evidence "$env:RUNNER_TEMP\release-out\upgrade-test.json"
+          python packaging/test_upgrade.py --old-setup (Join-Path $old $env:UPGRADE_FROM_SETUP) --old-version $env:UPGRADE_FROM_VERSION --new-setup "$env:RUNNER_TEMP\dist\$env:SETUP_NAME" --new-version "$env:NEW_VERSION" --bundle "$env:RUNNER_TEMP\bundle" --work-dir "$env:RUNNER_TEMP\upgrade-test" --evidence "$env:RUNNER_TEMP\release-out\upgrade-test.json"
           if ($LASTEXITCODE -ne 0) { throw "upgrade test failed ($LASTEXITCODE)" }
 
       - name: Record release hashes
