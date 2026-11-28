@@ -39,6 +39,7 @@ In scope: **web pages the user visits** (they can reach loopback ports from the 
 | No PATH fallbacks in installed copies | The launcher uses the bundled Python (`sys.executable`) and refuses to start if the bundled `node.exe` is missing, instead of running a `node.exe` found on `PATH`. | `launcher.py` `validate_paths`; `tests/unit/test_launcher.py` |
 | No Microsoft CRT redistribution | The bundle ships no `msvcp140`/`vcruntime140` files; setup and the launcher require the Microsoft Visual C++ 2015-2022 Redistributable (x64) 14.44+ and never download it. | `packaging/README.md` §7; installer CI |
 | Per-user, no elevation | The installer needs no administrator rights and never touches the user's dataset folder on uninstall. | `packaging/setup.iss`; installer and clean-machine CI |
+| Insights stay in memory | Insights (1.1.0) are computed from the stored Parquet file on request and never written to disk, so `metadata.json` still contains no cell values. The panel may show a category label or a number from the user's own data, only on `127.0.0.1`. | `backend/adapters/local_execution.py`; `tests/integration/test_insights_api.py` |
 | No telemetry | No dataset content, metadata or diagnostics leave the machine; Next.js telemetry is disabled. | `frontend/scripts/server.mjs`, `launcher.py` |
 
 ---

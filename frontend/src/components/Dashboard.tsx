@@ -7,10 +7,12 @@ import {
   clipText,
   errorMessage,
   getDataset,
+  getInsights,
   sourceName,
   STAT_FIELDS,
   type Column,
   type Dataset,
+  type Insights,
   type Numeric,
 } from "@/services/api";
 import s from "./workspace.module.css";
@@ -255,14 +257,122 @@ function MissingChart({ dataset: d }: { dataset: Dataset }) {
   );
 }
 
+const SEVERITY_LABEL = {
+  high: "Important",
+  medium: "Worth checking",
+  info: "Good to know",
+} as const;
+const INSIGHT_LIMIT = 8;
+
+function InsightsPanel({
+  datasetId,
+  revision,
+}: {
+  datasetId: string;
+  revision: number;
+}) {
+  const [state, setState] = useState<{ data?: Insights; error?: string }>({});
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    getInsights(datasetId, controller.signal).then(
+      (data) => {
+        if (!controller.signal.aborted) setState({ data });
+      },
+      (error) => {
+        if (!controller.signal.aborted)
+          setState({ error: errorMessage(error) });
+      },
+    );
+    return () => controller.abort();
+  }, [datasetId, revision]);
+  const d = state.data;
+  const items = d ? (expanded ? d.items : d.items.slice(0, INSIGHT_LIMIT)) : [];
+  return (
+    <section
+      className={`${s.card} ${s.insights}`}
+      aria-labelledby="insights-title"
+      aria-busy={!d && !state.error}
+    >
+      <div className={s.cardHead}>
+        <h2 id="insights-title">What this data says</h2>
+        <p>Rule-based · same data, same results</p>
+      </div>
+      {state.error ? (
+        <p className={s.quiet} aria-live="polite">
+          Insights are unavailable right now. The profile below is unaffected.{" "}
+          {state.error}
+        </p>
+      ) : !d ? (
+        <p className={s.quiet} aria-live="polite">
+          Reading the data…
+        </p>
+      ) : d.items.length === 0 ? (
+        <p className={s.quiet}>
+          No notable patterns were found by the built-in rules. This does not
+          mean the data is correct for your purpose.
+        </p>
+      ) : (
+        <>
+          <ul id="insights-list" className={s.insightList}>
+            {items.map((item, index) => (
+              <li
+                key={`${item.code}-${item.columns.join("|")}-${index}`}
+                data-severity={item.severity}
+              >
+                <span className={s.severity}>
+                  {SEVERITY_LABEL[item.severity]}
+                </span>
+                <div>
+                  <p className={s.insightTitle}>{clipText(item.title, 400)}</p>
+                  <p className={s.insightDetail}>
+                    {clipText(item.detail, 600)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {d.items.length > INSIGHT_LIMIT ? (
+            <button
+              className={s.secondary}
+              aria-controls="insights-list"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded
+                ? "Show fewer insights"
+                : `Show all ${d.items.length} insights`}
+            </button>
+          ) : null}
+        </>
+      )}
+      {d ? (
+        <p className={s.chartNote}>
+          {d.sampled
+            ? `Value-based findings use ${display(d.rows_examined)} evenly spaced rows. `
+            : ""}
+          {d.partial
+            ? "Some checks were skipped to stay within the time limit. "
+            : ""}
+          {d.truncated ? "Only the most important findings are listed. " : ""}
+          Findings describe patterns in this file; relationships are not causes.
+          Computed on this PC with rule set {clipText(d.method_version, 20)}.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function Profile({
   dataset: d,
   refresh,
   refreshing,
+  revision,
 }: {
   dataset: Dataset;
   refresh: () => void;
   refreshing: boolean;
+  revision: number;
 }) {
   const [warningLimit, setWarningLimit] = useState(20);
   const warnings = [...new Set([...d.quality.warnings, ...d.warnings])];
@@ -346,7 +456,9 @@ function Profile({
             observations to obtain meaningful profiles.
           </p>
         </div>
-      ) : null}
+      ) : (
+        <InsightsPanel datasetId={d.dataset_id} revision={revision} />
+      )}
       <div className={s.dashGrid}>
         <div className={s.stack}>
           <MissingChart dataset={d} />
@@ -539,6 +651,7 @@ export default function Dashboard({ datasetId }: { datasetId: string }) {
       <Profile
         dataset={state.data}
         refreshing={state.busy}
+        revision={revision}
         refresh={() => {
           if (state.busy) return;
           setState((current) => ({ ...current, busy: true }));

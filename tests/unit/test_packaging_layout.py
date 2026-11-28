@@ -86,7 +86,7 @@ def test_build_manifest_deterministic_and_sorted(tmp_path: Path) -> None:
 
     manifest = build_manifest(bundle)
 
-    assert manifest["version"] == "1.0.0"
+    assert manifest["version"] == "1.1.0"
     assert manifest["file_count"] == 3
     assert manifest["total_bytes"] == len(b"content A") + len(b"content B") + len(b"content C")
 
